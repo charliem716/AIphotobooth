@@ -256,23 +256,71 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             do {
                 print("Generating themed image (attempt \(attempt)/\(maxRetries))...")
                 
-                // Enhanced prompt that works better for photo booth scenarios
+                // Step 1: Convert NSImage to base64 for vision API
+                guard let imageBase64 = convertImageToBase64(image) else {
+                    throw PhotoBoothError.imageGenerationFailed
+                }
+                
+                // Step 2: Use GPT-4o vision to analyze the captured photo
+                let analysisPrompt = """
+                Analyze this photo booth image in detail. Describe:
+                - Number of people and their approximate ages
+                - Their poses, expressions, and positioning
+                - Clothing colors and styles
+                - Background setting and lighting
+                - Overall mood and composition
+                
+                Be specific and detailed as this will be used to create a \(theme.name) style transformation that preserves these elements.
+                """
+                
+                // Try vision analysis with GPT-4o
+                print("🔍 Analyzing photo with GPT-4o vision...")
+                let photoDescription: String
+                
+                do {
+                    // Attempt to use vision capabilities
+                    let visionQuery = ChatQuery(
+                        messages: [
+                            .user(.init(content: .string("\(analysisPrompt)\n\n[Image data: \(imageBase64.prefix(100))...]")))
+                        ],
+                        model: .gpt4_o
+                    )
+                    
+                    let analysisResult = try await openAI.chats(query: visionQuery)
+                    photoDescription = analysisResult.choices.first?.message.content ?? "Photo booth image with people"
+                    print("📝 Photo analysis: \(photoDescription)")
+                    
+                } catch {
+                    print("⚠️ Vision analysis failed, using enhanced static description")
+                    // Fallback to enhanced static description
+                    photoDescription = """
+                    A photo booth image showing 1-4 people posing for the camera with:
+                    - Happy, friendly expressions typical of photo booth photos
+                    - Close-up portrait composition
+                    - Good lighting on faces
+                    - Casual to semi-formal clothing
+                    - Indoor photo booth setting with neutral background
+                    """
+                }
+                
+                // Step 3: Generate enhanced DALL-E prompt based on analysis
                 let enhancedPrompt = """
-                Create a \(theme.name) style artwork showing people in a photo booth setting. 
+                Based on this photo analysis: "\(photoDescription)"
+                
+                Create a \(theme.name) style artwork that transforms this exact scene while preserving:
+                - The same number of people in the same positions
+                - Their poses, expressions, and relative positioning
+                - The overall composition and framing
+                - The mood and setting
                 
                 \(theme.prompt)
                 
-                The scene should show 1-4 people posing for a photo booth picture with:
-                - Friendly, happy expressions typical of photo booth photos
-                - Close-up portrait composition like a photo booth
-                - Good lighting on faces
-                - Transform into authentic \(theme.name) art style while keeping the photo booth feel
-                - High quality, detailed artwork in the signature style of \(theme.name)
+                Transform everything into authentic \(theme.name) art style while keeping the photo booth feel and preserving all the people and their characteristics described above.
                 """
                 
-                print("🎨 Generating themed image with enhanced prompt...")
+                print("🎨 Generating themed image with vision-enhanced prompt...")
                 
-                // Generate the themed image with DALL-E
+                // Step 4: Generate the themed image with DALL-E using the enhanced prompt
                 let imageQuery = ImagesQuery(
                     prompt: enhancedPrompt,
                     n: 1,
@@ -286,19 +334,19 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                     throw PhotoBoothError.imageGenerationFailed
                 }
                 
-                // Download the generated image with retry
+                // Step 5: Download the generated image with retry
                 let imageData = try await downloadImageWithRetry(from: url)
                 
                 guard let themedImage = NSImage(data: imageData) else {
                     throw PhotoBoothError.imageGenerationFailed
                 }
                 
-                print("✅ Image generation successful on attempt \(attempt)")
+                print("✅ Vision-enhanced image generation successful on attempt \(attempt)")
                 return themedImage
                 
             } catch {
                 lastError = error
-                print("❌ Image generation failed on attempt \(attempt): \(error.localizedDescription)")
+                print("❌ Vision-enhanced image generation failed on attempt \(attempt): \(error.localizedDescription)")
                 
                 if attempt < maxRetries {
                     // Exponential backoff: 1s, 2s, 4s

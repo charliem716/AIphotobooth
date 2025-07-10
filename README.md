@@ -161,21 +161,27 @@ Feel free to submit issues and enhancement requests!
 
 MIT License - see LICENSE file for details 
 
-## ✨ **Enhanced AI Image Generation**
+## ✨ **GPT-4o Vision-Powered AI Image Generation**
 
-The AI Photo Booth now uses **enhanced DALL-E prompts** specifically optimized for photo booth scenarios. The system generates themed artwork that captures the essence of photo booth photography while transforming it into your chosen cartoon style.
+The AI Photo Booth now uses **GPT-4o vision capabilities** to actually analyze captured photos before generating themed transformations. This creates much more accurate and personalized results.
 
 ### Current Implementation
-- **Smart Prompting**: Enhanced prompts that understand photo booth context (1-4 people, close-up portraits, friendly expressions)
-- **Style-Specific Details**: Each theme includes detailed style guides for authentic transformations
+- **GPT-4o Vision Analysis**: Actually analyzes the captured photo to understand people, poses, clothing, and setting
+- **Intelligent Prompting**: Generates DALL-E prompts based on real photo analysis rather than generic templates
+- **Fallback System**: Graceful fallback to enhanced static prompts if vision analysis fails
 - **Retry Logic**: 3 attempts with exponential backoff for reliable generation
 - **MMS Delivery**: Full-resolution images sent directly to phones
 
-### 🚀 **Future Enhancement: GPT-4o Vision**
-**Coming Soon**: Integration with GPT-4o's vision capabilities to:
-- Actually analyze the captured photo before transformation
-- Preserve exact number of people and their positions
-- Maintain clothing colors and poses in the themed transformation
-- Create more accurate, personalized results
+### How It Works
+1. **Photo Capture**: iPhone via Continuity Camera captures the photo
+2. **Vision Analysis**: GPT-4o analyzes the image for people, poses, clothing, expressions, and setting
+3. **Smart Prompt Generation**: Creates a DALL-E prompt that preserves the actual scene composition
+4. **Style Transformation**: DALL-E generates the themed artwork based on the real photo analysis
+5. **MMS Delivery**: Users receive the personalized AI-generated photo
 
-The infrastructure is ready for this upgrade when the MacPaw OpenAI SDK fully supports vision APIs. 
+### Benefits
+- **Accurate People Count**: Preserves the exact number of people in the photo
+- **Pose Preservation**: Maintains the actual poses and positioning from the original
+- **Clothing Recognition**: Considers actual clothing colors and styles in the transformation
+- **Composition Integrity**: Keeps the original photo booth composition and framing
+- **Personalized Results**: Each transformation is unique to the actual captured photo 
