@@ -13,10 +13,10 @@ A modern photo booth application for macOS that uses AI to transform photos into
 
 ## Requirements
 
-- macOS Ventura 13.0 or later
+- **macOS Sonoma 14.0 or later** (required for Continuity Camera)
 - iPhone with iOS 16+ (for Continuity Camera)
 - OpenAI API key
-- Twilio account (for SMS)
+- Twilio account (for MMS)
 - Swift 5.9+
 
 ## Quick Start

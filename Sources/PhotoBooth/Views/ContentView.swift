@@ -6,11 +6,10 @@ struct ContentView: View {
     @State private var showingSettings = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Camera Preview Section
+        HStack(spacing: 0) {
+            // Left Side - Camera Preview
             ZStack {
                 CameraPreviewView(session: viewModel.captureSession)
-                    .frame(height: 400)
                     .background(Color.black)
                     .overlay(
                         Group {
@@ -53,72 +52,91 @@ struct ContentView: View {
                     .background(Color.black.opacity(0.7))
                 }
             }
+            .frame(width: 500)
             
-            // Theme Selection
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Choose Your Theme")
-                    .font(.headline)
-                    .padding(.horizontal)
-                
-                LazyVGrid(columns: [
-                    GridItem(.flexible()),
-                    GridItem(.flexible()),
-                    GridItem(.flexible())
-                ], spacing: 12) {
-                    ForEach(viewModel.themes) { theme in
-                        ThemeButton(
-                            theme: theme,
-                            isSelected: viewModel.selectedTheme?.id == theme.id
-                        ) {
-                            viewModel.selectedTheme = theme
+            // Right Side - Controls
+            VStack(spacing: 20) {
+                // Theme Selection
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Choose Your Theme")
+                        .font(.headline)
+                    
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 12) {
+                        ForEach(viewModel.themes) { theme in
+                            ThemeButton(
+                                theme: theme,
+                                isSelected: viewModel.selectedTheme?.id == theme.id
+                            ) {
+                                viewModel.selectedTheme = theme
+                            }
                         }
                     }
                 }
-                .padding(.horizontal)
-            }
-            .padding(.vertical)
-            
-            // Phone Number Input
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Enter Phone Number")
-                    .font(.headline)
                 
-                HStack {
-                    Image(systemName: "phone.fill")
-                        .foregroundColor(.secondary)
-                    
-                    TextField("(555) 123-4567", text: $viewModel.phoneNumber)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                // Capture Button
+                Button(action: {
+                    viewModel.startCapture()
+                }) {
+                    HStack {
+                        Image(systemName: "camera.fill")
+                        Text("Take Photo")
+                    }
+                    .font(.title2)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        viewModel.selectedTheme != nil
+                            ? Color.accentColor
+                            : Color.gray
+                    )
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
                 }
-            }
-            .padding(.horizontal)
-            
-            // Capture Button
-            Button(action: {
-                viewModel.startCapture()
-            }) {
-                HStack {
-                    Image(systemName: "camera.fill")
-                    Text("Take Photo")
+                .disabled(viewModel.selectedTheme == nil || viewModel.isCountingDown || viewModel.isProcessing)
+                
+                // Last captured images preview
+                if viewModel.lastCapturedImage != nil || viewModel.lastThemedImage != nil {
+                    HStack(spacing: 10) {
+                        if let original = viewModel.lastCapturedImage {
+                            VStack {
+                                Text("Original")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(nsImage: original)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 120, height: 90)
+                                    .cornerRadius(8)
+                            }
+                        }
+                        
+                        if let themed = viewModel.lastThemedImage {
+                            VStack {
+                                Text("AI Themed")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(nsImage: themed)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 120, height: 90)
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.top)
                 }
-                .font(.title2)
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(
-                    viewModel.selectedTheme != nil && !viewModel.phoneNumber.isEmpty
-                        ? Color.accentColor
-                        : Color.gray
-                )
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                
+                Spacer()
             }
-            .disabled(viewModel.selectedTheme == nil || viewModel.phoneNumber.isEmpty || viewModel.isCountingDown || viewModel.isProcessing)
+            .frame(width: 400)
             .padding()
-            
-            Spacer()
         }
-        .frame(width: 600, height: 900)
-        .alert("Error", isPresented: $viewModel.showError) {
+        .frame(width: 900, height: 600)
+        .alert("Info", isPresented: $viewModel.showError) {
             Button("OK") {
                 viewModel.showError = false
             }
@@ -148,6 +166,8 @@ struct ContentView: View {
         }
     }
 }
+
+
 
 struct ThemeButton: View {
     let theme: PhotoTheme
@@ -218,3 +238,6 @@ struct ThemeButton: View {
         }
     }
 } 
+
+
+ 

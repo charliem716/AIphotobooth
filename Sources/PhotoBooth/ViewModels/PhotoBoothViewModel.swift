@@ -9,7 +9,6 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     @Published var isSessionRunning = false
     @Published var isCameraConnected = false
     @Published var selectedTheme: PhotoTheme?
-    @Published var phoneNumber = ""
     @Published var countdown = 0
     @Published var isCountingDown = false
     @Published var isProcessing = false
@@ -25,7 +24,6 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Services
     private var openAI: OpenAI?
-    private var twilioService: TwilioService?
     
     // MARK: - Other Properties
     private var countdownTimer: Timer?
@@ -40,7 +38,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         PhotoTheme(id: 5, name: "Scooby Doo", prompt: "Transform this photo into classic Scooby Doo cartoon style with groovy 70s vibes, mystery gang character design, and Hanna-Barbera animation"),
         PhotoTheme(id: 6, name: "SpongeBob", prompt: "Transform this photo into SpongeBob SquarePants style with underwater Bikini Bottom setting, bright colors, and zany cartoon expressions"),
         PhotoTheme(id: 7, name: "South Park", prompt: "Transform this photo into South Park style with simple geometric shapes, cut-out animation look, beady eyes, and Colorado mountain town setting"),
-        PhotoTheme(id: 8, name: "Batman TAS", prompt: "Transform this photo into Batman The Animated Series style with dark deco architecture, noir shadows, and Bruce Timm's iconic angular character design"),
+        PhotoTheme(id: 8, name: "Batman TAS", prompt: "Transform this photo into Batman The Animated Series style with art deco architecture, dramatic lighting, and Bruce Timm's iconic angular character design"),
         PhotoTheme(id: 9, name: "Flintstones", prompt: "Transform this photo into The Flintstones cartoon style with stone age setting, prehistoric elements, and classic Hanna-Barbera 60s animation design")
     ]
     
@@ -52,24 +50,43 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Setup
     private func setupServices() {
+        print("🔧 DEBUG: Setting up services...")
+        
         // Initialize OpenAI
         if let apiKey = ProcessInfo.processInfo.environment["OPENAI_KEY"] {
+            print("🔧 DEBUG: OpenAI API key found (length: \(apiKey.count))")
+            print("🔧 DEBUG: API key starts with: \(String(apiKey.prefix(10)))...")
             openAI = OpenAI(apiToken: apiKey)
+            print("✅ OpenAI service initialized")
         } else {
+            print("❌ OpenAI API key not found in environment")
             showError(message: "OpenAI API key not found. Please add OPENAI_KEY to your .env file")
-        }
-        
-        // Initialize Twilio
-        if let sid = ProcessInfo.processInfo.environment["TWILIO_SID"],
-           let token = ProcessInfo.processInfo.environment["TWILIO_TOKEN"],
-           let from = ProcessInfo.processInfo.environment["TWILIO_FROM"] {
-            twilioService = TwilioService(accountSID: sid, authToken: token, fromNumber: from)
-        } else {
-            showError(message: "Twilio credentials not found. Please add TWILIO_SID, TWILIO_TOKEN, and TWILIO_FROM to your .env file")
         }
     }
     
     private func setupCamera() {
+        // Request camera permission first
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            initializeCaptureSession()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.initializeCaptureSession()
+                    } else {
+                        self?.showError(message: "Camera access denied. Please enable camera access in System Preferences.")
+                    }
+                }
+            }
+        case .denied, .restricted:
+            showError(message: "Camera access denied. Please enable camera access in System Preferences.")
+        @unknown default:
+            showError(message: "Unknown camera permission status.")
+        }
+    }
+    
+    private func initializeCaptureSession() {
         captureSession = AVCaptureSession()
         captureSession?.sessionPreset = .high
         
@@ -78,40 +95,47 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Camera Methods
     func findAndSetupContinuityCamera() {
+        // Look for available cameras
+        let discoverySession = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera, .external],
+            mediaType: .video,
+            position: .unspecified
+        )
+        
+        print("🔍 [DEBUG] Available cameras:")
+        for device in discoverySession.devices {
+            print("   - \(device.localizedName) (Type: \(device.deviceType.rawValue))")
+        }
+        
+        // Try to find the best available camera
+        var selectedCamera: AVCaptureDevice?
+        
+        // First try external cameras (includes Continuity Camera)
+        if let externalCamera = discoverySession.devices.first(where: { $0.deviceType == .external }) {
+            print("📱 Found external camera (likely Continuity Camera): \(externalCamera.localizedName)")
+            selectedCamera = externalCamera
+        } else if let builtInCamera = discoverySession.devices.first(where: { $0.deviceType == .builtInWideAngleCamera }) {
+            print("💻 Using built-in camera: \(builtInCamera.localizedName)")
+            selectedCamera = builtInCamera
+        }
+        
+        if let camera = selectedCamera {
+            setupCamera(with: camera)
+        } else {
+            print("❌ No camera found")
+            showError(message: "No camera detected. Please connect your iPhone via Continuity Camera or ensure your Mac has a built-in camera.")
+        }
+    }
+    
+    private func setupCamera(with device: AVCaptureDevice) {
         guard let session = captureSession else { return }
         
         session.beginConfiguration()
         
         // Remove existing inputs
         session.inputs.forEach { session.removeInput($0) }
+        session.outputs.forEach { session.removeOutput($0) }
         
-        // Find Continuity Camera device
-        var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera]
-        if #available(macOS 14.0, *) {
-            deviceTypes.append(.external)
-        }
-        
-        let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: deviceTypes,
-            mediaType: .video,
-            position: .unspecified
-        )
-        
-        // Look for Continuity Camera (it appears as external device)
-        if let device = discoverySession.devices.first(where: { $0.modelID.contains("iPhone") || $0.localizedName.contains("iPhone") }) {
-            setupCameraDevice(device, in: session)
-        } else if let device = discoverySession.devices.first {
-            // Fallback to any available camera for testing
-            setupCameraDevice(device, in: session)
-        } else {
-            isCameraConnected = false
-            showError(message: "No camera found. Please connect your iPhone and enable Continuity Camera")
-        }
-        
-        session.commitConfiguration()
-    }
-    
-    private func setupCameraDevice(_ device: AVCaptureDevice, in session: AVCaptureSession) {
         do {
             let input = try AVCaptureDeviceInput(device: device)
             
@@ -126,52 +150,54 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 }
                 
                 isCameraConnected = true
+                print("✅ Camera connected: \(device.localizedName)")
                 
-                if !isSessionRunning {
-                    session.startRunning()
-                    isSessionRunning = true
-                }
+            } else {
+                throw PhotoBoothError.cameraNotFound
             }
         } catch {
-            showError(message: "Failed to setup camera: \(error.localizedDescription)")
+            print("❌ Failed to setup camera: \(error.localizedDescription)")
             isCameraConnected = false
+            showError(message: "Failed to setup camera: \(error.localizedDescription)")
+        }
+        
+        session.commitConfiguration()
+        
+        if !isSessionRunning {
+            session.startRunning()
+            isSessionRunning = true
         }
     }
     
-    // MARK: - Capture Methods
+    // MARK: - Photo Capture and Processing
     func startCapture() {
+        print("🎬 [DEBUG] Starting photo capture workflow")
+        print("🎨 [DEBUG] Selected theme: \(selectedTheme?.name ?? "None")")
+        
         guard selectedTheme != nil else {
+            print("❌ [DEBUG] No theme selected")
             showError(message: "Please select a theme first")
             return
         }
         
-        guard !phoneNumber.isEmpty else {
-            showError(message: "Please enter a phone number")
-            return
-        }
-        
-        // Validate phone number format
-        let cleanedNumber = phoneNumber.replacingOccurrences(of: "[^0-9+]", with: "", options: .regularExpression)
-        if cleanedNumber.count < 10 {
-            showError(message: "Please enter a valid phone number")
-            return
-        }
-        
-        // Start countdown
-        countdown = 3
+        print("✅ [DEBUG] Starting countdown...")
         isCountingDown = true
+        countdown = 3
         
-        countdownTimer?.invalidate()
-        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self else { return }
+        // Play countdown sound
+        AudioServicesPlaySystemSound(1057) // Tock sound
+        
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            DispatchQueue.main.async {
+                self.countdown -= 1
+                print("⏰ [DEBUG] Countdown: \(self.countdown)")
                 
-                if self.countdown > 1 {
-                    self.countdown -= 1
-                    self.playCountdownSound()
+                if self.countdown > 0 {
+                    AudioServicesPlaySystemSound(1057) // Tock sound
                 } else {
-                    self.countdownTimer?.invalidate()
-                    self.countdown = 0
+                    print("📸 [DEBUG] Countdown finished, taking photo...")
+                    AudioServicesPlaySystemSound(1108) // Camera shutter sound
+                    timer.invalidate()
                     self.isCountingDown = false
                     self.capturePhoto()
                 }
@@ -180,32 +206,42 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     }
     
     private func capturePhoto() {
+        print("📸 [DEBUG] Capturing photo...")
+        
         guard let photoOutput = photoOutput else {
+            print("❌ [DEBUG] Photo output not available")
             showError(message: "Camera not ready")
             return
         }
         
         let settings = AVCapturePhotoSettings()
-        settings.flashMode = .off
+        settings.isHighResolutionPhotoEnabled = true
         
+        print("📸 [DEBUG] Taking photo with settings...")
         photoOutput.capturePhoto(with: settings, delegate: self)
-    }
-    
-    private func playCountdownSound() {
-        NSSound(named: "Glass")?.play()
     }
     
     // MARK: - Image Processing
     func processImage(_ image: NSImage) async {
-        guard let theme = selectedTheme,
-              openAI != nil else { return }
+        print("🎨 [DEBUG] Starting image processing...")
+        print("🎨 [DEBUG] Selected theme: \(selectedTheme?.name ?? "None")")
+        print("🎨 [DEBUG] OpenAI configured: \(openAI != nil ? "YES" : "NO")")
         
-        isProcessing = true
+        guard let theme = selectedTheme,
+              openAI != nil else { 
+            print("❌ [DEBUG] Missing theme or OpenAI service")
+            return 
+        }
+        
+        await MainActor.run {
+            isProcessing = true
+        }
         lastCapturedImage = image
         
         do {
             // Save original image
             let originalPath = try await saveOriginalImage(image)
+            print("💾 Original photo saved to: \(originalPath.path)")
             
             // Generate themed image with retry logic
             print("🎨 Starting AI image generation...")
@@ -214,11 +250,11 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             
             // Save themed image
             let themedPath = try await saveThemedImage(themedImage)
+            print("💾 Themed photo saved to: \(themedPath.path)")
             
-            // Send via MMS with retry logic
-            print("📱 Sending MMS...")
-            if let twilioService = twilioService {
-                try await twilioService.sendImage(themedPath, to: phoneNumber)
+            // Show success message
+            await MainActor.run {
+                showError(message: "Photos saved to Pictures/booth folder!")
             }
             
             // Notify external display
@@ -234,122 +270,144 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             print("✅ Photo booth process completed successfully!")
             
         } catch {
-            print("❌ Photo booth process failed: \(error.localizedDescription)")
+            print("❌ [DEBUG] Photo booth process failed: \(error.localizedDescription)")
+            print("❌ [DEBUG] Error type: \(type(of: error))")
             
             // Show user-friendly error message
             let friendlyMessage = getFriendlyErrorMessage(for: error)
-            showError(message: friendlyMessage)
+            await MainActor.run {
+                showError(message: friendlyMessage)
+            }
         }
         
-        isProcessing = false
+        await MainActor.run {
+            isProcessing = false
+        }
     }
     
     private func generateThemedImage(from image: NSImage, theme: PhotoTheme) async throws -> NSImage {
-        guard let openAI = openAI else {
+        guard openAI != nil else {
+            print("❌ OpenAI service not configured")
             throw PhotoBoothError.serviceNotConfigured
         }
+        
+        print("🔧 DEBUG: Starting image generation with OpenAI")
+        print("🔧 DEBUG: Theme selected: \(theme.name)")
         
         let maxRetries = 3
         var lastError: Error?
         
         for attempt in 1...maxRetries {
             do {
-                print("Generating themed image (attempt \(attempt)/\(maxRetries))...")
+                print("🔧 DEBUG: Generating themed image (attempt \(attempt)/\(maxRetries))...")
                 
-                // Step 1: Convert NSImage to base64 for vision API
-                guard let imageBase64 = convertImageToBase64(image) else {
+                // Convert NSImage to JPEG data for the API
+                guard let tiffData = image.tiffRepresentation,
+                      let bitmap = NSBitmapImageRep(data: tiffData),
+                      let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
                     throw PhotoBoothError.imageGenerationFailed
                 }
                 
-                // Step 2: Use GPT-4o vision to analyze the captured photo
-                let analysisPrompt = """
-                Analyze this photo booth image in detail. Describe:
-                - Number of people and their approximate ages
-                - Their poses, expressions, and positioning
-                - Clothing colors and styles
-                - Background setting and lighting
-                - Overall mood and composition
+                print("📸 Using direct image editing with GPT-image-1...")
                 
-                Be specific and detailed as this will be used to create a \(theme.name) style transformation that preserves these elements.
+                // Create the theme-specific prompt
+                let editPrompt = """
+                Transform this photo into \(theme.name) style while preserving the exact same people, faces, poses, and composition from the original photo. \(theme.prompt)
+                
+                IMPORTANT: Keep all the people exactly as they appear in the original photo - same faces, same expressions, same positioning. Only change the art style, not the people or their appearance.
                 """
                 
-                // Try vision analysis with GPT-4o
-                print("🔍 Analyzing photo with GPT-4o vision...")
-                let photoDescription: String
+                print("🔧 DEBUG: Edit prompt: \(editPrompt)")
                 
-                do {
-                    // Attempt to use vision capabilities
-                    let visionQuery = ChatQuery(
-                        messages: [
-                            .user(.init(content: .string("\(analysisPrompt)\n\n[Image data: \(imageBase64.prefix(100))...]")))
-                        ],
-                        model: .gpt4_o
-                    )
-                    
-                    let analysisResult = try await openAI.chats(query: visionQuery)
-                    photoDescription = analysisResult.choices.first?.message.content ?? "Photo booth image with people"
-                    print("📝 Photo analysis: \(photoDescription)")
-                    
-                } catch {
-                    print("⚠️ Vision analysis failed, using enhanced static description")
-                    // Fallback to enhanced static description
-                    photoDescription = """
-                    A photo booth image showing 1-4 people posing for the camera with:
-                    - Happy, friendly expressions typical of photo booth photos
-                    - Close-up portrait composition
-                    - Good lighting on faces
-                    - Casual to semi-formal clothing
-                    - Indoor photo booth setting with neutral background
-                    """
+                // Direct API call for image editing
+                guard let apiKey = ProcessInfo.processInfo.environment["OPENAI_KEY"] else {
+                    throw PhotoBoothError.serviceNotConfigured
                 }
                 
-                // Step 3: Generate enhanced DALL-E prompt based on analysis
-                let enhancedPrompt = """
-                Based on this photo analysis: "\(photoDescription)"
+                let url = URL(string: "https://api.openai.com/v1/images/edits")!
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
                 
-                Create a \(theme.name) style artwork that transforms this exact scene while preserving:
-                - The same number of people in the same positions
-                - Their poses, expressions, and relative positioning
-                - The overall composition and framing
-                - The mood and setting
+                // Create multipart form data
+                let boundary = UUID().uuidString
+                request.addValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
                 
-                \(theme.prompt)
+                var body = Data()
                 
-                Transform everything into authentic \(theme.name) art style while keeping the photo booth feel and preserving all the people and their characteristics described above.
-                """
+                // Add model field
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
+                body.append("gpt-image-1\r\n".data(using: .utf8)!)
                 
-                print("🎨 Generating themed image with vision-enhanced prompt...")
+                // Add prompt field
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
+                body.append("\(editPrompt)\r\n".data(using: .utf8)!)
                 
-                // Step 4: Generate the themed image with DALL-E using the enhanced prompt
-                let imageQuery = ImagesQuery(
-                    prompt: enhancedPrompt,
-                    n: 1,
-                    size: ._1024
-                )
+                // Add size field
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"size\"\r\n\r\n".data(using: .utf8)!)
+                body.append("1024x1024\r\n".data(using: .utf8)!)
                 
-                let result = try await openAI.images(query: imageQuery)
+                // Add image field
+                body.append("--\(boundary)\r\n".data(using: .utf8)!)
+                body.append("Content-Disposition: form-data; name=\"image\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
+                body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+                body.append(jpegData)
+                body.append("\r\n".data(using: .utf8)!)
                 
-                guard let urlString = result.data.first?.url,
-                      let url = URL(string: urlString) else {
+                // Close boundary
+                body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+                
+                request.httpBody = body
+                
+                print("🔧 DEBUG: Sending image edit request to OpenAI...")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
                     throw PhotoBoothError.imageGenerationFailed
                 }
                 
-                // Step 5: Download the generated image with retry
-                let imageData = try await downloadImageWithRetry(from: url)
+                print("🔧 DEBUG: Response status code: \(httpResponse.statusCode)")
                 
-                guard let themedImage = NSImage(data: imageData) else {
+                if httpResponse.statusCode != 200 {
+                    if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        print("❌ API Error: \(errorData)")
+                    }
                     throw PhotoBoothError.imageGenerationFailed
                 }
                 
-                print("✅ Vision-enhanced image generation successful on attempt \(attempt)")
-                return themedImage
+                // Parse response
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let dataArray = json["data"] as? [[String: Any]],
+                      let firstItem = dataArray.first,
+                      let b64Json = firstItem["b64_json"] as? String else {
+                    print("❌ Failed to parse JSON response")
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("🔧 DEBUG: Response was: \(responseString.prefix(200))...")
+                    }
+                    throw PhotoBoothError.imageGenerationFailed
+                }
+                
+                print("✅ Successfully parsed API response, got base64 image data")
+                
+                // Decode base64 image
+                guard let imageData = Data(base64Encoded: b64Json),
+                      let editedImage = NSImage(data: imageData) else {
+                    print("❌ Failed to decode base64 image data")
+                    throw PhotoBoothError.imageGenerationFailed
+                }
+                
+                print("✅ Successfully created edited image from API response")
+                return editedImage
                 
             } catch {
                 lastError = error
-                print("❌ Vision-enhanced image generation failed on attempt \(attempt): \(error.localizedDescription)")
+                print("❌ Image editing failed on attempt \(attempt)")
+                print("🔧 DEBUG: Error details: \(error)")
                 
                 if attempt < maxRetries {
-                    // Exponential backoff: 1s, 2s, 4s
                     let delay = Double(1 << (attempt - 1))
                     print("⏳ Waiting \(delay) seconds before retry...")
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -357,35 +415,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             }
         }
         
-        // All retries failed
-        throw lastError ?? PhotoBoothError.imageGenerationFailed
-    }
-    
-    private func downloadImageWithRetry(from url: URL, maxRetries: Int = 3) async throws -> Data {
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                
-                guard let httpResponse = response as? HTTPURLResponse,
-                      httpResponse.statusCode == 200 else {
-                    throw PhotoBoothError.imageGenerationFailed
-                }
-                
-                return data
-                
-            } catch {
-                lastError = error
-                print("❌ Image download failed on attempt \(attempt): \(error.localizedDescription)")
-                
-                if attempt < maxRetries {
-                    let delay = Double(attempt)
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                }
-            }
-        }
-        
+        print("❌ All \(maxRetries) attempts failed. Last error: \(lastError?.localizedDescription ?? "Unknown")")
         throw lastError ?? PhotoBoothError.imageGenerationFailed
     }
     
@@ -441,26 +471,22 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 return "We had trouble creating your AI photo. Please try again!"
             case .imageSaveFailed:
                 return "Couldn't save your photo. Please check disk space and try again."
+            case .cameraNotFound:
+                return "Could not find the camera. Please ensure it's connected and try again."
             }
         } else {
             return "Something went wrong. Please try the photo booth again!"
         }
-    }
-    
-    private func convertImageToBase64(_ image: NSImage) -> String? {
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
-            return nil
-        }
-        return jpegData.base64EncodedString()
     }
 }
 
 // MARK: - AVCapturePhotoCaptureDelegate
 extension PhotoBoothViewModel: @preconcurrency AVCapturePhotoCaptureDelegate {
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        print("📸 [DEBUG] Photo capture completed")
+        
         if let error = error {
+            print("❌ [DEBUG] Photo capture error: \(error)")
             Task { @MainActor in
                 showError(message: "Photo capture failed: \(error.localizedDescription)")
             }
@@ -469,11 +495,14 @@ extension PhotoBoothViewModel: @preconcurrency AVCapturePhotoCaptureDelegate {
         
         guard let data = photo.fileDataRepresentation(),
               let image = NSImage(data: data) else {
+            print("❌ [DEBUG] Could not get image data from photo")
             Task { @MainActor in
                 showError(message: "Failed to process captured photo")
             }
             return
         }
+        
+        print("✅ [DEBUG] Photo captured successfully, size: \(data.count) bytes")
         
         Task {
             await processImage(image)
@@ -492,6 +521,7 @@ enum PhotoBoothError: Error {
     case serviceNotConfigured
     case imageGenerationFailed
     case imageSaveFailed
+    case cameraNotFound
 }
 
 extension Notification.Name {

@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "PhotoBooth",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v14)
     ],
     products: [
         .executable(
@@ -25,6 +25,13 @@ let package = Package(
             dependencies: [
                 .product(name: "OpenAI", package: "OpenAI"),
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
+            ],
+            linkerSettings: [
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("CoreMedia"),
+                .linkedFramework("CoreVideo"),
+                .linkedFramework("AppKit"),
+                .linkedFramework("Foundation")
             ]
         ),
         .testTarget(
