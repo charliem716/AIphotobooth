@@ -19,12 +19,6 @@ struct PhotoBoothApp: App {
             ContentView()
                 .environmentObject(PhotoBoothViewModel())
                 .environmentObject(projectorManager)
-                .onAppear {
-                    // Show projector window if external display is available
-                    if NSScreen.screens.count > 1 {
-                        projectorManager.showProjectorWindow()
-                    }
-                }
         }
         .windowResizability(.contentSize)
         

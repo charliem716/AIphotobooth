@@ -38,7 +38,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         PhotoTheme(id: 5, name: "Scooby Doo", prompt: "Transform this photo into classic Scooby Doo cartoon style with groovy 70s vibes, mystery gang character design, and Hanna-Barbera animation"),
         PhotoTheme(id: 6, name: "SpongeBob", prompt: "Transform this photo into SpongeBob SquarePants style with underwater Bikini Bottom setting, bright colors, and zany cartoon expressions"),
         PhotoTheme(id: 7, name: "South Park", prompt: "Transform this photo into South Park style with simple geometric shapes, cut-out animation look, beady eyes, and Colorado mountain town setting"),
-        PhotoTheme(id: 8, name: "Batman TAS", prompt: "Transform this photo into Batman The Animated Series style with art deco architecture, dramatic lighting, and Bruce Timm's iconic angular character design"),
+        PhotoTheme(id: 8, name: "Pixar", prompt: "Transform this photo into Pixar animation style with vibrant colors, expressive cartoon features, and the distinctive 3D animated look of characters from Toy Story, Finding Nemo, and The Incredibles"),
         PhotoTheme(id: 9, name: "Flintstones", prompt: "Transform this photo into The Flintstones cartoon style with stone age setting, prehistoric elements, and classic Hanna-Barbera 60s animation design")
     ]
     

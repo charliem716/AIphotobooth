@@ -3,6 +3,7 @@ import AVFoundation
 
 struct ContentView: View {
     @EnvironmentObject var viewModel: PhotoBoothViewModel
+    @EnvironmentObject var projectorManager: ProjectorWindowManager
     @State private var showingSettings = false
     
     var body: some View {
@@ -160,9 +161,26 @@ struct ContentView: View {
                 }
                 .help("Reconnect Camera")
             }
+            
+            // Projector Controls
+            if NSScreen.screens.count > 1 {
+                ToolbarItem(placement: .automatic) {
+                    Button(action: {
+                        if projectorManager.isProjectorWindowVisible {
+                            projectorManager.hideProjectorWindow()
+                        } else {
+                            projectorManager.showProjectorWindow()
+                        }
+                    }) {
+                        Image(systemName: projectorManager.isProjectorWindowVisible ? "tv.fill" : "tv")
+                    }
+                    .help(projectorManager.isProjectorWindowVisible ? "Hide Projector (Screen 2)" : "Show Projector (Screen 2)")
+                }
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
+                .environmentObject(projectorManager)
         }
     }
 }
@@ -214,8 +232,8 @@ struct ThemeButton: View {
             return LinearGradient(colors: [.yellow, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
         case 7: // South Park
             return LinearGradient(colors: [.red, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case 8: // Batman TAS
-            return LinearGradient(colors: [.black, .gray], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case 8: // Pixar
+            return LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
         case 9: // Flintstones
             return LinearGradient(colors: [.orange, .brown], startPoint: .topLeading, endPoint: .bottomTrailing)
         default:
@@ -232,7 +250,7 @@ struct ThemeButton: View {
         case 5: return "magnifyingglass"     // Scooby Doo (mystery)
         case 6: return "drop.fill"           // SpongeBob (underwater)
         case 7: return "snow"                // South Park (Colorado)
-        case 8: return "moon.stars.fill"     // Batman TAS (night)
+        case 8: return "sparkles"            // Pixar (magic/animation)
         case 9: return "hammer.fill"         // Flintstones (stone age)
         default: return "photo.fill"
         }

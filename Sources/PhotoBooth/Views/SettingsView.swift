@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("projectorScreenIndex") private var projectorScreenIndex = 1
     @AppStorage("fadeRevealDuration") private var fadeRevealDuration = 1.0
     @AppStorage("cacheRetentionDays") private var cacheRetentionDays = 7
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var projectorManager: ProjectorWindowManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -15,16 +15,53 @@ struct SettingsView: View {
             
             GroupBox("Display Settings") {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Projector Screen:")
-                        Picker("", selection: $projectorScreenIndex) {
-                            ForEach(0..<NSScreen.screens.count, id: \.self) { index in
-                                Text("Screen \(index + 1)")
-                                    .tag(index)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Display Configuration:")
+                            Spacer()
+                            if NSScreen.screens.count <= 1 {
+                                Text("Single Display")
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("Multi-Display")
+                                    .foregroundColor(.green)
                             }
                         }
-                        .pickerStyle(MenuPickerStyle())
-                        .frame(width: 150)
+                        
+                        Text("Main Interface: Always on laptop screen (Screen 1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if NSScreen.screens.count <= 1 {
+                            Text("⚠️ Connect a second display to use projector features")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        } else {
+                            Text("✓ Projector: Automatically uses Screen 2")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                        
+                        // Manual projector controls
+                        if NSScreen.screens.count > 1 {
+                            HStack {
+                                Button(projectorManager.isProjectorWindowVisible ? "Hide Projector" : "Show Projector") {
+                                    if projectorManager.isProjectorWindowVisible {
+                                        projectorManager.hideProjectorWindow()
+                                    } else {
+                                        projectorManager.showProjectorWindow()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                
+                                Spacer()
+                                
+                                Text(projectorManager.isProjectorWindowVisible ? "Projector Active" : "Projector Hidden")
+                                    .font(.caption)
+                                    .foregroundColor(projectorManager.isProjectorWindowVisible ? .green : .secondary)
+                            }
+                            .padding(.top, 8)
+                        }
                     }
                     
                     HStack {
@@ -83,16 +120,28 @@ struct SettingsView: View {
             
             Spacer()
             
+            Divider()
+            
             HStack {
                 Spacer()
+                
                 Button("Done") {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
             }
+            .padding(.top, 8)
         }
         .padding()
-        .frame(width: 500, height: 500)
+        .frame(minWidth: 500, maxWidth: 600, minHeight: 400, maxHeight: 600)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") {
+                    dismiss()
+                }
+            }
+        }
     }
     
     private func isTwilioConfigured() -> Bool {
