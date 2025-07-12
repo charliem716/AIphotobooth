@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("fadeRevealDuration") private var fadeRevealDuration = 1.0
+    @AppStorage("warningDuration") private var warningDuration = 3.0
     @AppStorage("cacheRetentionDays") private var cacheRetentionDays = 7
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var projectorManager: ProjectorWindowManager
@@ -54,6 +55,17 @@ struct SettingsView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 
+                                if projectorManager.isProjectorWindowVisible {
+                                    Button("Reset Projector") {
+                                        // Send reset notification to projector
+                                        NotificationCenter.default.post(
+                                            name: .init("resetProjector"),
+                                            object: nil
+                                        )
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                                
                                 Spacer()
                                 
                                 Text(projectorManager.isProjectorWindowVisible ? "Projector Active" : "Projector Hidden")
@@ -69,6 +81,14 @@ struct SettingsView: View {
                         Slider(value: $fadeRevealDuration, in: 0.5...3.0, step: 0.5)
                             .frame(width: 200)
                         Text("\(fadeRevealDuration, specifier: "%.1f")s")
+                            .frame(width: 50)
+                    }
+                    
+                    HStack {
+                        Text("Warning Duration:")
+                        Slider(value: $warningDuration, in: 1.0...5.0, step: 1.0)
+                            .frame(width: 200)
+                        Text("\(warningDuration, specifier: "%.0f")s")
                             .frame(width: 50)
                     }
                 }

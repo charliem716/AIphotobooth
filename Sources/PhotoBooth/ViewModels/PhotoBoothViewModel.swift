@@ -35,7 +35,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         PhotoTheme(id: 2, name: "Simpsons", prompt: "Transform this photo into The Simpsons cartoon style with yellow skin, big eyes, overbite, and the iconic Springfield art style"),
         PhotoTheme(id: 3, name: "Rick and Morty", prompt: "Transform this photo into Rick and Morty animation style with exaggerated features, drooling mouths, unibrows, and sci-fi elements"),
         PhotoTheme(id: 4, name: "Dragon Ball Z", prompt: "Transform this photo into Dragon Ball Z anime style with spiky hair, intense expressions, power auras, and dynamic action poses"),
-        PhotoTheme(id: 5, name: "Scooby Doo", prompt: "Transform this photo into classic Scooby Doo cartoon style with groovy 70s vibes, mystery gang character design, and Hanna-Barbera animation"),
+        PhotoTheme(id: 5, name: "Scooby Doo", prompt: "Transform this photo into Scooby Doo cartoon style with retro animation design and bright colors"),
         PhotoTheme(id: 6, name: "SpongeBob", prompt: "Transform this photo into SpongeBob SquarePants style with underwater Bikini Bottom setting, bright colors, and zany cartoon expressions"),
         PhotoTheme(id: 7, name: "South Park", prompt: "Transform this photo into South Park style with simple geometric shapes, cut-out animation look, beady eyes, and Colorado mountain town setting"),
         PhotoTheme(id: 8, name: "Pixar", prompt: "Transform this photo into Pixar animation style with vibrant colors, expressive cartoon features, and the distinctive 3D animated look of characters from Toy Story, Finding Nemo, and The Incredibles"),
@@ -243,10 +243,39 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             let originalPath = try await saveOriginalImage(image)
             print("💾 Original photo saved to: \(originalPath.path)")
             
+            // Notify projector to show original image immediately
+            NotificationCenter.default.post(
+                name: .photoCapture,
+                object: nil,
+                userInfo: [
+                    "original": originalPath,
+                    "theme": theme.name
+                ]
+            )
+            
             // Generate themed image with retry logic
             print("🎨 Starting AI image generation...")
+            
+            // Notify projector that processing has started
+            NotificationCenter.default.post(
+                name: .processingStart,
+                object: nil,
+                userInfo: [
+                    "theme": theme.name
+                ]
+            )
+            
             let themedImage = try await generateThemedImage(from: image, theme: theme)
             lastThemedImage = themedImage
+            
+            // Notify projector that processing is complete
+            NotificationCenter.default.post(
+                name: .processingDone,
+                object: nil,
+                userInfo: [
+                    "theme": theme.name
+                ]
+            )
             
             // Save themed image
             let themedPath = try await saveThemedImage(themedImage)
@@ -361,6 +390,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 body.append("--\(boundary)--\r\n".data(using: .utf8)!)
                 
                 request.httpBody = body
+                request.timeoutInterval = 120 // Increase timeout to 2 minutes
                 
                 print("🔧 DEBUG: Sending image edit request to OpenAI...")
                 let (data, response) = try await URLSession.shared.data(for: request)
@@ -463,6 +493,21 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     }
     
     private func getFriendlyErrorMessage(for error: Error) -> String {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet:
+                return "No internet connection. Please check your network and try again."
+            case .timedOut:
+                return "Request timed out. The AI service might be busy. Try a simpler theme like Simpsons or SpongeBob."
+            default:
+                return "Network error occurred. Please check your connection and try again."
+            }
+        }
+        
+        if error.localizedDescription.contains("moderation") {
+            return "This image couldn't be processed due to content policies. Please try a different theme or photo."
+        }
+        
         if error is PhotoBoothError {
             switch error as! PhotoBoothError {
             case .serviceNotConfigured:
