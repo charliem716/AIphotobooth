@@ -6,26 +6,35 @@ extension Notification.Name {
     static let processingStart = Notification.Name("processingStart")
     static let processingDone = Notification.Name("processingDone")
     static let resetProjector = Notification.Name("resetProjector")
+    static let countdownStart = Notification.Name("countdownStart")
+    static let showError = Notification.Name("showError")
+    static let returnToLiveCamera = Notification.Name("returnToLiveCamera")
 }
 
 enum ProjectorState {
     case idle                    // "AI Photo Booth" screen
+    case liveCamera             // Live camera feed
+    case countdown              // Countdown overlay on camera
     case showingOriginal        // Original photo + processing overlay
     case processingComplete     // "Get ready for the reveal!" warning
     case showingThemed         // Final themed image display
+    case minimumDisplay        // Minimum display period for themed image
+    case error                 // Error state with funny message
 }
 
 struct ProjectorView: View {
+    @EnvironmentObject var viewModel: PhotoBoothViewModel
     @State private var originalImage: NSImage?
     @State private var themedImage: NSImage?
     @State private var showThemed = false
     @State private var showControls = false
     @State private var isFullscreen = false
-    @State private var projectorState: ProjectorState = .idle
+    @State private var projectorState: ProjectorState = .liveCamera
     @State private var processingStartTime: Date?
     @State private var showWarning = false
     @State private var warningCountdown = 3
     @State private var selectedThemeName: String = ""
+    @State private var errorMessage: String = ""
     @AppStorage("fadeRevealDuration") private var fadeRevealDuration = 1.0
     @AppStorage("warningDuration") private var warningDuration = 3.0
     
@@ -39,6 +48,12 @@ struct ProjectorView: View {
         .publisher(for: .processingDone)
     private let resetProjectorPublisher = NotificationCenter.default
         .publisher(for: .resetProjector)
+    private let countdownStartPublisher = NotificationCenter.default
+        .publisher(for: .countdownStart)
+    private let showErrorPublisher = NotificationCenter.default
+        .publisher(for: .showError)
+    private let returnToLiveCameraPublisher = NotificationCenter.default
+        .publisher(for: .returnToLiveCamera)
     
     var onClose: (() -> Void)?
     var onToggleFullscreen: (() -> Void)?
@@ -53,6 +68,14 @@ struct ProjectorView: View {
             case .idle:
                 idleView
                 
+            case .liveCamera:
+                ProjectorCameraView(session: viewModel.captureSession)
+                
+            case .countdown:
+                ProjectorCountdownView(
+                    session: viewModel.captureSession
+                )
+                
             case .showingOriginal:
                 originalWithProcessingView
                 
@@ -63,8 +86,11 @@ struct ProjectorView: View {
                     originalWithProcessingView
                 }
                 
-            case .showingThemed:
+            case .showingThemed, .minimumDisplay:
                 themedImageView
+                
+            case .error:
+                ErrorMessageView(errorMessage: errorMessage)
             }
             
             // Overlay controls
@@ -83,7 +109,16 @@ struct ProjectorView: View {
             handleFinalResult(notification)
         }
         .onReceive(resetProjectorPublisher) { _ in
-            resetToIdle()
+            resetToLiveCamera()
+        }
+        .onReceive(countdownStartPublisher) { _ in
+            handleCountdownStart()
+        }
+        .onReceive(showErrorPublisher) { notification in
+            handleShowError(notification)
+        }
+        .onReceive(returnToLiveCameraPublisher) { _ in
+            returnToLiveCamera()
         }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -259,7 +294,9 @@ struct ProjectorView: View {
            let original = NSImage(data: originalData) {
             originalImage = original
             selectedThemeName = themeName
-            projectorState = .showingOriginal
+            withAnimation(.easeInOut(duration: 0.5)) {
+                projectorState = .showingOriginal
+            }
             processingStartTime = Date()
         }
     }
@@ -274,7 +311,9 @@ struct ProjectorView: View {
     }
     
     private func handleProcessingDone(_ notification: Notification) {
-        projectorState = .processingComplete
+        withAnimation(.easeInOut(duration: 0.3)) {
+            projectorState = .processingComplete
+        }
         startWarningSequence()
     }
     
@@ -309,7 +348,9 @@ struct ProjectorView: View {
     }
     
     private func showThemedImage() {
-        projectorState = .showingThemed
+        withAnimation(.easeInOut(duration: 0.3)) {
+            projectorState = .showingThemed
+        }
         showThemed = false
         
         // Trigger fade animation
@@ -319,25 +360,133 @@ struct ProjectorView: View {
             }
         }
         
-        // Keep themed image visible until next photo cycle
-        // (No auto-reset - stays until next photo is taken)
+        // After fade animation, enter minimum display period
+        DispatchQueue.main.asyncAfter(deadline: .now() + fadeRevealDuration + 0.5) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                projectorState = .minimumDisplay
+            }
+            
+            // Start minimum display timer
+            viewModel.isInMinimumDisplayPeriod = true
+            viewModel.isReadyForNextPhoto = false
+            viewModel.minimumDisplayTimeRemaining = Int(viewModel.minimumDisplayDuration)
+            
+            // Start countdown timer
+            viewModel.minimumDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+                DispatchQueue.main.async {
+                    viewModel.minimumDisplayTimeRemaining -= 1
+                    
+                    if viewModel.minimumDisplayTimeRemaining <= 0 {
+                        timer.invalidate()
+                        viewModel.isInMinimumDisplayPeriod = false
+                        viewModel.isReadyForNextPhoto = true
+                        
+                        // Don't automatically return to live camera - wait for theme selection
+                    }
+                }
+            }
+        }
     }
     
-    private func resetToIdle() {
-        projectorState = .idle
+    private func resetToLiveCamera() {
+        projectorState = .liveCamera
         originalImage = nil
         themedImage = nil
         showThemed = false
         showWarning = false
         processingStartTime = nil
         selectedThemeName = ""
+        errorMessage = ""
+    }
+    
+    private func handleCountdownStart() {
+        print("🎬 [PROJECTOR] Handling countdown start - switching to countdown state")
+        withAnimation(.easeInOut(duration: 0.3)) {
+            projectorState = .countdown
+        }
+        print("🎬 [PROJECTOR] Projector state changed to: \(projectorState)")
+    }
+    
+    private func handleShowError(_ notification: Notification) {
+        if let userInfo = notification.userInfo,
+           let message = userInfo["message"] as? String {
+            errorMessage = message
+        }
+        projectorState = .error
+        
+        // Return to live camera after 5 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            returnToLiveCamera()
+        }
+    }
+    
+    private func returnToLiveCamera() {
+        withAnimation(.easeInOut(duration: 0.5)) {
+            projectorState = .liveCamera
+        }
     }
 }
 
 // Window Manager for External Display
 class ProjectorWindowManager: ObservableObject {
     @Published var isProjectorWindowVisible = false
+    @Published var availableDisplays: [NSScreen] = []
     private var projectorWindow: NSWindow?
+    private weak var viewModel: PhotoBoothViewModel?
+    
+    init() {
+        setupDisplayMonitoring()
+        updateAvailableDisplays()
+    }
+    
+    func setViewModel(_ viewModel: PhotoBoothViewModel) {
+        self.viewModel = viewModel
+        
+        // If projector window exists but was created without viewModel, recreate it
+        if isProjectorWindowVisible && projectorWindow?.contentView != nil {
+            print("🔄 [PROJECTOR] Recreating projector window with proper viewModel")
+            closeProjectorWindow()
+            showProjectorWindow()
+        }
+    }
+    
+    private func setupDisplayMonitoring() {
+        // Monitor for display configuration changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(displayConfigurationChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+    }
+    
+    @objc private func displayConfigurationChanged() {
+        print("🔍 Display configuration changed")
+        updateAvailableDisplays()
+        
+        // If projector window is visible but no longer has a valid screen, hide it
+        if isProjectorWindowVisible && NSScreen.screens.count <= 1 {
+            print("⚠️ External display disconnected, hiding projector window")
+            hideProjectorWindow()
+        }
+        // If projector was hidden due to single display and now we have multiple, show it
+        else if !isProjectorWindowVisible && NSScreen.screens.count > 1 {
+            print("✅ External display connected, showing projector window")
+            showProjectorWindow()
+        }
+    }
+    
+    private func updateAvailableDisplays() {
+        availableDisplays = NSScreen.screens
+        print("🔍 Available displays: \(availableDisplays.count)")
+        for (index, screen) in availableDisplays.enumerated() {
+            print("   Display \(index): \(screen.localizedName) - \(screen.frame)")
+        }
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
     
     func showProjectorWindow() {
         // Find external display - always use second screen if available
@@ -348,18 +497,27 @@ class ProjectorWindowManager: ObservableObject {
             print("🔍 DEBUG: Screen \(index): \(screen.localizedName) - Frame: \(screen.frame)")
         }
         
-        // Ensure we have at least 2 screens
-        guard screens.count > 1 else {
-            print("⚠️ Only one screen detected. Projector window requires a second display.")
-            print("⚠️ Please connect an external display and set it to extended mode (not mirrored)")
-            return
+        // Check for single display mode setting
+        let singleDisplayMode = UserDefaults.standard.bool(forKey: "singleDisplayMode")
+        
+        // Determine which screen to use
+        let screen: NSScreen
+        if singleDisplayMode || screens.count <= 1 {
+            // Use main screen for single display mode or when only one screen is available
+            screen = screens[0]
+            print("📺 Using main screen for projector (single display mode)")
+        } else {
+            // Use second screen for dual display mode
+            screen = screens[1]
+            print("📺 Using second screen for projector (dual display mode)")
         }
         
-        // Always use the second screen (index 1) to keep main interface on laptop
-        let screen = screens[1]
-        
-        print("📺 Main screen (laptop): \(screens[0].localizedName)")
-        print("📺 Projector screen: \(screen.localizedName)")
+        if screens.count > 1 {
+            print("📺 Main screen (laptop): \(screens[0].localizedName)")
+            print("📺 Projector screen: \(screen.localizedName)")
+        } else {
+            print("📺 Single display mode: \(screen.localizedName)")
+        }
         print("📺 Creating projector window on screen: \(screen.frame)")
         
         // Create window if needed
@@ -406,7 +564,14 @@ class ProjectorWindowManager: ObservableObject {
                     }
                 }
             )
-            window.contentView = NSHostingView(rootView: projectorView)
+            
+            // Ensure viewModel is available - if not, wait for it
+            guard let viewModel = viewModel else {
+                print("⚠️ [PROJECTOR] ViewModel not available yet, deferring window creation")
+                return
+            }
+            
+            window.contentView = NSHostingView(rootView: projectorView.environmentObject(viewModel))
             
             projectorWindow = window
             print("✅ Projector window created successfully")
