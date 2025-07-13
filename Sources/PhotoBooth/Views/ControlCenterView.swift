@@ -130,7 +130,7 @@ struct ControlCenterView: View {
                 .fontWeight(.semibold)
             
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(viewModel.themes.prefix(8), id: \.id) { theme in
+                ForEach(viewModel.themes, id: \.id) { theme in
                     ThemeButton(
                         theme: theme,
                         isSelected: viewModel.selectedTheme?.id == theme.id,
@@ -140,11 +140,6 @@ struct ControlCenterView: View {
                         }
                     )
                 }
-                
-                // Empty slot for 3x3 grid
-                Rectangle()
-                    .fill(Color.clear)
-                    .aspectRatio(1, contentMode: .fit)
             }
         }
         .padding(16)
