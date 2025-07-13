@@ -91,7 +91,7 @@ struct ControlCenterView: View {
                     }) {
                         HStack {
                             Image(systemName: "iphone")
-                            Text("Force Continuity Camera")
+                            Text("Connect iPhone")
                         }
                     }
                 } label: {

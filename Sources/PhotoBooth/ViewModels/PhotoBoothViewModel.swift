@@ -115,28 +115,57 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Camera Methods
     func refreshAvailableCameras() {
-        // Try a broader search to find Charlie's 15 Pro Camera
+        print("🔍 [DEBUG] Starting comprehensive camera discovery...")
+        
+        // Try multiple discovery approaches for better iPhone detection
+        let allDeviceTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera,
+            .continuityCamera,
+            .external,
+            .externalUnknown
+        ]
+        
+        print("🔍 [DEBUG] Searching for device types: \(allDeviceTypes.map { $0.rawValue })")
+        
         let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [
-                .builtInWideAngleCamera,
-                .external,
-                .continuityCamera,
-                .externalUnknown
-            ],
+            deviceTypes: allDeviceTypes,
             mediaType: .video,
             position: .unspecified
         )
         
         availableCameras = discoverySession.devices
-        print("🔍 [DEBUG] Available cameras:")
-        for device in availableCameras {
-            print("   - \(device.localizedName) (Type: \(device.deviceType.rawValue))")
+        print("🔍 [DEBUG] Found \(availableCameras.count) total cameras:")
+        
+        for (index, device) in availableCameras.enumerated() {
+            let isConnected = device.isConnected ? "✅ Connected" : "❌ Disconnected"
+            let position = device.position.description
+            print("   \(index + 1). \(device.localizedName)")
+            print("      Type: \(device.deviceType.rawValue)")
+            print("      Position: \(position)")
+            print("      Status: \(isConnected)")
+            print("      Unique ID: \(device.uniqueID)")
             
-            // Check if this is Charlie's camera
-            if device.localizedName.contains("Charlie") || device.localizedName.contains("15 Pro") {
-                print("   *** Found Charlie's iPhone! ***")
+            // Special detection for potential iPhones
+            if device.localizedName.lowercased().contains("iphone") ||
+               device.localizedName.lowercased().contains("charlie") ||
+               device.localizedName.contains("15 Pro") ||
+               device.deviceType == .continuityCamera ||
+               device.deviceType == .external {
+                print("      ⭐ POTENTIAL CONTINUITY CAMERA DETECTED!")
             }
         }
+        
+        // Also try the default video devices approach
+        let defaultDevices = AVCaptureDevice.devices(for: .video)
+        print("🔍 [DEBUG] Default video devices: \(defaultDevices.count)")
+        for device in defaultDevices {
+            if !availableCameras.contains(device) {
+                print("   Additional device: \(device.localizedName) (Type: \(device.deviceType.rawValue))")
+                availableCameras.append(device)
+            }
+        }
+        
+        print("🔍 [DEBUG] Total cameras after comprehensive search: \(availableCameras.count)")
     }
     
     func selectCamera(_ device: AVCaptureDevice) {
@@ -175,14 +204,30 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         return """
         Continuity Camera not found. To set up Continuity Camera:
         
-        1. Make sure your iPhone is running iOS 16+ and Mac is running macOS 13+
-        2. Sign in to the same Apple ID on both devices with 2FA enabled
-        3. Enable Bluetooth and Wi-Fi on both devices
-        4. Place your iPhone on a stand in landscape orientation
-        5. Turn off your iPhone screen
-        6. Keep your iPhone close to your Mac
+        📱 **iPhone Setup:**
+        1. iPhone must be running iOS 16 or later
+        2. Sign in with the same Apple ID as your Mac
+        3. Enable Two-Factor Authentication
+        4. Turn on Bluetooth and Wi-Fi
         
-        The iPhone should appear as a camera option automatically.
+        💻 **Mac Setup:**
+        1. Mac must be running macOS Ventura 13 or later
+        2. Sign in with same Apple ID as iPhone
+        3. Enable Bluetooth and Wi-Fi
+        4. Make sure both devices are on the same network
+        
+        🔗 **Connection Steps:**
+        1. Place iPhone on a stand/tripod in landscape orientation
+        2. Lock the iPhone screen (press power button)
+        3. Keep iPhone close to Mac (within Bluetooth range)
+        4. Wait 10-15 seconds for automatic detection
+        5. iPhone should appear in camera list automatically
+        
+        💡 **Troubleshooting:**
+        - Try turning Bluetooth off/on on both devices
+        - Restart both iPhone and Mac
+        - Check that Continuity Camera is enabled in iPhone Settings > General > AirPlay & Handoff
+        - Make sure both devices are signed into the same iCloud account
         """
     }
     
@@ -271,6 +316,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     func startCapture() {
         print("🎬 [DEBUG] Starting photo capture workflow")
         print("🎨 [DEBUG] Selected theme: \(selectedTheme?.name ?? "None")")
+        print("🔍 [DEBUG] ViewModel object ID: \(ObjectIdentifier(self))")
         
         guard selectedTheme != nil else {
             print("❌ [DEBUG] No theme selected")
@@ -281,14 +327,17 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         // Cancel any existing countdown timer
         countdownTimer?.invalidate()
         
-        print("✅ [DEBUG] Starting countdown...")
-        print("🔍 [DEBUG] Main ViewModel object ID: \(ObjectIdentifier(self))")
+        print("✅ [DEBUG] Starting countdown timer...")
+        
+        // Start countdown with explicit animation
         withAnimation(.easeInOut(duration: 0.2)) {
             isCountingDown = true
             countdown = 3
         }
+        
         print("🔍 [DEBUG] Countdown state set - isCountingDown: \(isCountingDown), countdown: \(countdown)")
         print("🖥️ [DEBUG] Countdown overlay should now be VISIBLE")
+        print("📺 [DEBUG] Notifying projector to start countdown...")
         
         // Notify projector to start countdown
         NotificationCenter.default.post(
@@ -296,10 +345,10 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             object: nil
         )
         
-        // Play countdown sound
+        // Play initial countdown sound
         AudioServicesPlaySystemSound(1057) // Tock sound
         
-        // Store the timer properly
+        // Start countdown timer
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             DispatchQueue.main.async {
                 guard let self = self else {
@@ -307,32 +356,40 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                     return
                 }
                 
-                self.countdown -= 1
-                print("⏰ [DEBUG] Countdown: \(self.countdown), isCountingDown: \(self.isCountingDown)")
-                print("🖥️ [DEBUG] Overlay visible: \(self.isCountingDown), showing: \(self.countdown > 0 ? "\(self.countdown)" : "📸")")
+                print("⏰ [DEBUG] Countdown tick - current: \(self.countdown), isCountingDown: \(self.isCountingDown)")
                 
-                if self.countdown > 0 {
-                    AudioServicesPlaySystemSound(1057) // Tock sound
-                    // Update countdown with explicit animation
+                if self.countdown > 1 {
+                    // Continue countdown
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        // countdown already decremented above
+                        self.countdown -= 1
                     }
+                    AudioServicesPlaySystemSound(1057) // Tock sound
+                    print("⏰ [DEBUG] Countdown updated to: \(self.countdown)")
+                    print("🖥️ [DEBUG] Overlay showing: \(self.countdown)")
                 } else {
-                    print("📸 [DEBUG] Countdown finished, taking photo...")
+                    // Countdown finished - show camera icon
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        self.countdown = 0
+                    }
+                    print("📸 [DEBUG] Countdown finished, showing camera icon...")
+                    print("🖥️ [DEBUG] Overlay showing: 📸")
+                    
                     AudioServicesPlaySystemSound(1108) // Camera shutter sound
                     timer.invalidate()
                     self.countdownTimer = nil
                     
+                    // Start photo capture
+                    self.capturePhoto()
+                    
                     // Keep countdown overlay visible briefly to show camera icon
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        withAnimation(.easeOut(duration: 0.3)) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
                             self.isCountingDown = false
                         }
                         print("🔍 [DEBUG] Countdown ended - isCountingDown: \(self.isCountingDown)")
                         print("🖥️ [DEBUG] Countdown overlay should now be HIDDEN")
+                        print("✅ [DEBUG] Countdown sequence complete")
                     }
-                    
-                    self.capturePhoto()
                 }
             }
         }
@@ -711,4 +768,20 @@ enum PhotoBoothError: Error {
 
 extension Notification.Name {
     static let newPhotoCapture = Notification.Name("newPhotoCapture")
+}
+
+// MARK: - Extensions
+extension AVCaptureDevice.Position {
+    var description: String {
+        switch self {
+        case .back:
+            return "Back"
+        case .front:
+            return "Front"
+        case .unspecified:
+            return "Unspecified"
+        @unknown default:
+            return "Unknown"
+        }
+    }
 } 

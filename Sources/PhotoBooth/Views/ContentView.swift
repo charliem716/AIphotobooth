@@ -14,6 +14,10 @@ struct ContentView: View {
                 // Set the viewModel on the projector manager
                 projectorManager.setViewModel(viewModel)
                 
+                // Debug: Verify shared ViewModel instance
+                print("📱 [DEBUG] Control Center ViewModel ID: \(ObjectIdentifier(viewModel))")
+                print("🔗 [DEBUG] Setting projector manager ViewModel to same instance")
+                
                 // Auto-show projector on startup if setting is enabled and there are multiple displays
                 if autoShowProjector && NSScreen.screens.count > 1 && !projectorManager.isProjectorWindowVisible {
                     // Delay slightly to ensure viewModel is properly set

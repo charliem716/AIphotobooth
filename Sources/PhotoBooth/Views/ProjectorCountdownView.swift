@@ -36,16 +36,19 @@ struct ProjectorCountdownView: View {
             .zIndex(1000)
         }
         .onAppear {
-            print("🎬 [PROJECTOR] ProjectorCountdownView appeared - isCountingDown: \(viewModel.isCountingDown), countdown: \(viewModel.countdown)")
-            print("🎬 [PROJECTOR] ViewModel object ID: \(ObjectIdentifier(viewModel))")
+            print("🎬 [PROJECTOR] ProjectorCountdownView appeared")
+            print("📺 [DEBUG] Projector ViewModel ID: \(ObjectIdentifier(viewModel))")
+            print("🔍 [DEBUG] Initial state - isCountingDown: \(viewModel.isCountingDown), countdown: \(viewModel.countdown)")
         }
         .onChange(of: viewModel.isCountingDown) { newValue in
-            print("🎬 [PROJECTOR] Countdown state changed - isCountingDown: \(newValue), countdown: \(viewModel.countdown)")
-            print("🎬 [PROJECTOR] ViewModel object ID: \(ObjectIdentifier(viewModel))")
+            print("🎬 [PROJECTOR] Countdown state changed - isCountingDown: \(newValue)")
+            print("📺 [DEBUG] Projector ViewModel ID: \(ObjectIdentifier(viewModel))")
+            print("🔍 [DEBUG] Full state - countdown: \(viewModel.countdown), isCountingDown: \(newValue)")
         }
         .onChange(of: viewModel.countdown) { newValue in
-            print("🎬 [PROJECTOR] Countdown value changed - countdown: \(newValue), isCountingDown: \(viewModel.isCountingDown)")
-            print("🎬 [PROJECTOR] ViewModel object ID: \(ObjectIdentifier(viewModel))")
+            print("🎬 [PROJECTOR] Countdown value changed - countdown: \(newValue)")
+            print("📺 [DEBUG] Projector ViewModel ID: \(ObjectIdentifier(viewModel))")
+            print("🔍 [DEBUG] Full state - isCountingDown: \(viewModel.isCountingDown), countdown: \(newValue)")
         }
     }
     
