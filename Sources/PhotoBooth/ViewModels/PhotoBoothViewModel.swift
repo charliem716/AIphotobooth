@@ -121,8 +121,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         let allDeviceTypes: [AVCaptureDevice.DeviceType] = [
             .builtInWideAngleCamera,
             .continuityCamera,
-            .external,
-            .externalUnknown
+            .external
         ]
         
         print("🔍 [DEBUG] Searching for device types: \(allDeviceTypes.map { $0.rawValue })")
@@ -488,6 +487,12 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             
             print("✅ Photo booth process completed successfully!")
             
+            // Reset theme selection to force user to choose theme for next photo
+            await MainActor.run {
+                selectedTheme = nil
+                print("🔄 Theme selection reset - user must choose theme for next photo")
+            }
+            
         } catch {
             print("❌ [DEBUG] Photo booth process failed: \(error.localizedDescription)")
             print("❌ [DEBUG] Error type: \(type(of: error))")
@@ -496,6 +501,8 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             let friendlyMessage = getFriendlyErrorMessage(for: error)
             await MainActor.run {
                 showError(message: friendlyMessage)
+                // Also reset theme on error
+                selectedTheme = nil
             }
         }
         
@@ -526,7 +533,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                     throw PhotoBoothError.imageGenerationFailed
                 }
                 
-                print("📏 DEBUG: Image processed to 1536x1024 landscape for OpenAI API")
+                print("📏 DEBUG: Image cropped to 3:2 aspect ratio for OpenAI API")
                 
                 // Convert processed NSImage to JPEG data for the API
                 guard let tiffData = landscapeImage.tiffRepresentation,
@@ -657,7 +664,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         print("📏 [DEBUG] \(label): \(image.size.width) x \(image.size.height)")
     }
     
-    private func cropToLandscape(_ image: NSImage, targetSize: CGSize = CGSize(width: 1536, height: 1024)) -> NSImage? {
+    private func cropToLandscape(_ image: NSImage) -> NSImage? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
@@ -665,17 +672,17 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         let originalWidth = CGFloat(cgImage.width)
         let originalHeight = CGFloat(cgImage.height)
         let originalAspectRatio = originalWidth / originalHeight
-        let targetAspectRatio = targetSize.width / targetSize.height // 3:2 = 1.5
+        let targetAspectRatio: CGFloat = 1536.0 / 1024.0 // 3:2 = 1.5
         
         let cropWidth: CGFloat
         let cropHeight: CGFloat
         
         if originalAspectRatio > targetAspectRatio {
-            // Image is wider than target - crop width
+            // Image is wider than target - crop width (use full height)
             cropHeight = originalHeight
             cropWidth = cropHeight * targetAspectRatio
         } else {
-            // Image is taller than target - crop height
+            // Image is taller than target - crop height (use full width)
             cropWidth = originalWidth
             cropHeight = cropWidth / targetAspectRatio
         }
@@ -692,11 +699,11 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             return nil
         }
         
-        // Create new NSImage from cropped image
+        // Create new NSImage from cropped image at original resolution
         let croppedImage = NSImage(cgImage: croppedCGImage, size: NSSize(width: cropWidth, height: cropHeight))
         
-        // Resize to target size
-        return resizeImage(croppedImage, to: targetSize)
+        print("📏 Cropped to 3:2 aspect ratio: \(Int(cropWidth)) × \(Int(cropHeight)) (maintained original resolution)")
+        return croppedImage
     }
     
     private func resizeImage(_ image: NSImage, to targetSize: CGSize) -> NSImage? {
@@ -725,7 +732,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         }
         
         try jpegData.write(to: fileURL)
-        print("💾 Original image cropped and resized to 1536x1024 for consistency")
+        print("💾 Original image cropped to 3:2 aspect ratio (maintaining original resolution)")
         return fileURL
     }
     

@@ -6,32 +6,52 @@ struct ControlCenterView: View {
     @State private var showingSettings = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            headerView
-            
-            // Main content area
-            HStack(spacing: 20) {
-                // Left side - Theme selection and controls
-                VStack(spacing: 20) {
-                    themeSelectionGrid
-                    takePhotoButton
-                    projectorControls
-                }
-                .frame(maxWidth: .infinity)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // Header
+                headerView
                 
-                // Right side - Status and preview
-                VStack(spacing: 20) {
-                    statusDisplay
-                    lastPhotoPreview
-                    Spacer()
+                // Main content area with ScrollView
+                ScrollView {
+                    if geometry.size.width > 900 {
+                        // Wide layout - side by side
+                        HStack(alignment: .top, spacing: 20) {
+                            // Left side - Theme selection and controls
+                            VStack(spacing: 20) {
+                                themeSelectionGrid
+                                takePhotoButton
+                                projectorControls
+                            }
+                            .frame(maxWidth: .infinity)
+                            
+                            // Right side - Status and preview
+                            VStack(spacing: 20) {
+                                statusDisplay
+                                lastPhotoPreview
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .padding(20)
+                    } else {
+                        // Narrow layout - stacked vertically
+                        VStack(spacing: 20) {
+                            themeSelectionGrid
+                            takePhotoButton
+                            
+                            HStack(alignment: .top, spacing: 20) {
+                                statusDisplay
+                                lastPhotoPreview
+                            }
+                            
+                            projectorControls
+                        }
+                        .padding(20)
+                    }
                 }
-                .frame(maxWidth: .infinity)
             }
-            .padding(20)
         }
         .background(Color(NSColor.windowBackgroundColor))
-
         .sheet(isPresented: $showingSettings) {
             SettingsView()
                 .environmentObject(projectorManager)
@@ -124,27 +144,34 @@ struct ControlCenterView: View {
     
     // MARK: - Theme Selection Grid
     private var themeSelectionGrid: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Theme Selection")
-                .font(.headline)
-                .fontWeight(.semibold)
-            
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(viewModel.themes, id: \.id) { theme in
-                    ThemeButton(
-                        theme: theme,
-                        isSelected: viewModel.selectedTheme?.id == theme.id,
-                        isEnabled: viewModel.isReadyForNextPhoto && !viewModel.isProcessing,
-                        action: {
-                            selectTheme(theme)
-                        }
-                    )
+        GeometryReader { geometry in
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Theme Selection")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                // Adaptive columns based on available width
+                let columnCount = max(2, min(4, Int(geometry.size.width / 120)))
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: columnCount)
+                
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(viewModel.themes, id: \.id) { theme in
+                        ThemeButton(
+                            theme: theme,
+                            isSelected: viewModel.selectedTheme?.id == theme.id,
+                            isEnabled: viewModel.isReadyForNextPhoto && !viewModel.isProcessing,
+                            action: {
+                                selectTheme(theme)
+                            }
+                        )
+                    }
                 }
             }
+            .padding(16)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(12)
         }
-        .padding(16)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
+        .frame(height: 200) // Fixed height for the grid area
     }
     
     // MARK: - Take Photo Button
@@ -321,7 +348,7 @@ struct ControlCenterView: View {
             viewModel.selectedTheme = theme
         }
         
-        // If in minimum display period, selecting theme returns to live feed
+        // If in minimum display period, selecting theme prepares for next photo without returning to live feed
         if viewModel.isInMinimumDisplayPeriod {
             withAnimation(.easeInOut(duration: 0.3)) {
                 viewModel.isInMinimumDisplayPeriod = false
@@ -329,11 +356,8 @@ struct ControlCenterView: View {
             }
             viewModel.minimumDisplayTimer?.invalidate()
             
-            // Notify projector to return to live feed
-            NotificationCenter.default.post(
-                name: .resetProjector,
-                object: nil
-            )
+            // Stay on themed image display - don't reset to live camera
+            // The themed image will remain visible until user takes next photo
         }
     }
 }
@@ -349,13 +373,17 @@ struct ThemeButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Text(theme.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .multilineTextAlignment(.center)
                     .foregroundColor(isSelected ? .white : .primary)
                     .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .aspectRatio(1, contentMode: .fit)
+            .frame(minHeight: 40)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSelected ? Color.blue : Color(NSColor.controlColor))

@@ -25,7 +25,27 @@ struct ContentView: View {
                         projectorManager.showProjectorWindow()
                     }
                 }
+                
+                // Configure main window
+                DispatchQueue.main.async {
+                    if let window = NSApplication.shared.mainWindow {
+                        window.title = "AI Photo Booth - Control Center"
+                        window.titlebarAppearsTransparent = false
+                        window.isMovableByWindowBackground = false
+                        
+                        // Ensure window can be resized properly
+                        window.isRestorable = true
+                        window.collectionBehavior = [.fullScreenPrimary, .moveToActiveSpace]
+                        window.level = .normal
+                        
+                        // Explicitly enable resizing
+                        window.styleMask.insert(.resizable)
+                        window.minSize = NSSize(width: 800, height: 700)
+                        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+                    }
+                }
             }
+            .frame(minWidth: 800, minHeight: 700)
     }
 }
 

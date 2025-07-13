@@ -401,10 +401,28 @@ struct ProjectorView: View {
     
     private func handleCountdownStart() {
         print("🎬 [PROJECTOR] Handling countdown start - switching to countdown state")
-        withAnimation(.easeInOut(duration: 0.3)) {
-            projectorState = .countdown
+        
+        // If we're currently showing a themed image, smoothly transition back to live camera first
+        if projectorState == .showingThemed || projectorState == .minimumDisplay {
+            print("🎬 [PROJECTOR] Transitioning from themed image to live camera countdown")
+            withAnimation(.easeInOut(duration: 0.2)) {
+                projectorState = .liveCamera
+            }
+            
+            // Brief pause to show live camera before countdown overlay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    self.projectorState = .countdown
+                }
+                print("🎬 [PROJECTOR] Projector state changed to: \(self.projectorState)")
+            }
+        } else {
+            // Direct transition to countdown if not coming from themed image
+            withAnimation(.easeInOut(duration: 0.3)) {
+                projectorState = .countdown
+            }
+            print("🎬 [PROJECTOR] Projector state changed to: \(projectorState)")
         }
-        print("🎬 [PROJECTOR] Projector state changed to: \(projectorState)")
     }
     
     private func handleShowError(_ notification: Notification) {

@@ -30,14 +30,14 @@ struct ProjectorCameraView: View {
                         // Camera preview
                         if let session = session {
                             CameraPreviewView(session: session)
-                                .aspectRatio(4/3, contentMode: .fit)
+                                .aspectRatio(1536.0/1024.0, contentMode: .fit) // 3:2 landscape aspect ratio
                                 .cornerRadius(12)
                                 .shadow(color: .white.opacity(0.3), radius: 8, x: 0, y: 0)
                         } else {
                             // Placeholder when no camera
                             RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.gray.opacity(0.3))
-                                .aspectRatio(4/3, contentMode: .fit)
+                                .aspectRatio(1536.0/1024.0, contentMode: .fit) // 3:2 landscape aspect ratio
                                 .overlay(
                                     VStack {
                                         Image(systemName: "camera.fill")

@@ -21,7 +21,25 @@ struct PhotoBoothApp: App {
                 .environmentObject(sharedViewModel)
                 .environmentObject(projectorManager)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.automatic)
+        .defaultSize(width: 1000, height: 800)
+        .commands {
+            // Add standard window commands including fullscreen
+            SidebarCommands()
+            ToolbarCommands()
+            
+            // Custom commands
+            CommandGroup(after: .windowArrangement) {
+                Button("Toggle Projector") {
+                    if projectorManager.isProjectorWindowVisible {
+                        projectorManager.hideProjectorWindow()
+                    } else {
+                        projectorManager.showProjectorWindow()
+                    }
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+            }
+        }
         
         Settings {
             SettingsView()
