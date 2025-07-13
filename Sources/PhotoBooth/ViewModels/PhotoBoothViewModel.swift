@@ -520,8 +520,16 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             do {
                 print("🔧 DEBUG: Generating themed image (attempt \(attempt)/\(maxRetries))...")
                 
-                // Convert NSImage to JPEG data for the API
-                guard let tiffData = image.tiffRepresentation,
+                // Ensure image is landscape and properly sized for API consistency
+                guard let landscapeImage = cropToLandscape(image) else {
+                    print("❌ Failed to crop image to landscape")
+                    throw PhotoBoothError.imageGenerationFailed
+                }
+                
+                print("📏 DEBUG: Image processed to 1536x1024 landscape for OpenAI API")
+                
+                // Convert processed NSImage to JPEG data for the API
+                guard let tiffData = landscapeImage.tiffRepresentation,
                       let bitmap = NSBitmapImageRep(data: tiffData),
                       let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
                     throw PhotoBoothError.imageGenerationFailed
@@ -567,7 +575,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 // Add size field
                 body.append("--\(boundary)\r\n".data(using: .utf8)!)
                 body.append("Content-Disposition: form-data; name=\"size\"\r\n\r\n".data(using: .utf8)!)
-                body.append("1024x1024\r\n".data(using: .utf8)!)
+                body.append("1536x1024\r\n".data(using: .utf8)!)
                 
                 // Add image field
                 body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -620,6 +628,9 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 }
                 
                 print("✅ Successfully created edited image from API response")
+                await MainActor.run {
+                    logImageDimensions(editedImage, label: "Themed image from OpenAI")
+                }
                 return editedImage
                 
             } catch {
@@ -640,6 +651,62 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     }
     
     // MARK: - File Management
+    
+    // MARK: - Image Processing Utilities
+    private func logImageDimensions(_ image: NSImage, label: String) {
+        print("📏 [DEBUG] \(label): \(image.size.width) x \(image.size.height)")
+    }
+    
+    private func cropToLandscape(_ image: NSImage, targetSize: CGSize = CGSize(width: 1536, height: 1024)) -> NSImage? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        
+        let originalWidth = CGFloat(cgImage.width)
+        let originalHeight = CGFloat(cgImage.height)
+        let originalAspectRatio = originalWidth / originalHeight
+        let targetAspectRatio = targetSize.width / targetSize.height // 3:2 = 1.5
+        
+        let cropWidth: CGFloat
+        let cropHeight: CGFloat
+        
+        if originalAspectRatio > targetAspectRatio {
+            // Image is wider than target - crop width
+            cropHeight = originalHeight
+            cropWidth = cropHeight * targetAspectRatio
+        } else {
+            // Image is taller than target - crop height
+            cropWidth = originalWidth
+            cropHeight = cropWidth / targetAspectRatio
+        }
+        
+        // Calculate crop origin to center the crop
+        let cropX = (originalWidth - cropWidth) / 2
+        let cropY = (originalHeight - cropHeight) / 2
+        
+        // Create crop rectangle
+        let cropRect = CGRect(x: cropX, y: cropY, width: cropWidth, height: cropHeight)
+        
+        // Crop the image
+        guard let croppedCGImage = cgImage.cropping(to: cropRect) else {
+            return nil
+        }
+        
+        // Create new NSImage from cropped image
+        let croppedImage = NSImage(cgImage: croppedCGImage, size: NSSize(width: cropWidth, height: cropHeight))
+        
+        // Resize to target size
+        return resizeImage(croppedImage, to: targetSize)
+    }
+    
+    private func resizeImage(_ image: NSImage, to targetSize: CGSize) -> NSImage? {
+        let newImage = NSImage(size: targetSize)
+        newImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: targetSize))
+        newImage.unlockFocus()
+        return newImage
+    }
+    
     private func saveOriginalImage(_ image: NSImage) async throws -> URL {
         let picturesURL = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first!
         let boothURL = picturesURL.appendingPathComponent("booth")
@@ -649,13 +716,16 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         let fileName = "original_\(Date().timeIntervalSince1970).jpg"
         let fileURL = boothURL.appendingPathComponent(fileName)
         
-        guard let tiffData = image.tiffRepresentation,
+        // Crop the original image to 1536x1024 landscape for consistency with themed images
+        guard let landscapeImage = cropToLandscape(image),
+              let tiffData = landscapeImage.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
               let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
             throw PhotoBoothError.imageSaveFailed
         }
         
         try jpegData.write(to: fileURL)
+        print("💾 Original image cropped and resized to 1536x1024 for consistency")
         return fileURL
     }
     
@@ -746,7 +816,8 @@ extension PhotoBoothViewModel: @preconcurrency AVCapturePhotoCaptureDelegate {
         
         print("✅ [DEBUG] Photo captured successfully, size: \(data.count) bytes")
         
-        Task {
+        Task { @MainActor in
+            logImageDimensions(image, label: "Captured image")
             await processImage(image)
         }
     }
