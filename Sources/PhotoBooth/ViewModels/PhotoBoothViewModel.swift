@@ -17,6 +17,15 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     @Published var errorMessage: String?
     @Published var showError = false
     
+    // MARK: - New State Properties for UI Updates
+    @Published var isReadyForNextPhoto = true
+    @Published var minimumDisplayTimeRemaining = 0
+    @Published var isInMinimumDisplayPeriod = false
+    
+    // MARK: - Camera Selection Properties
+    @Published var availableCameras: [AVCaptureDevice] = []
+    @Published var selectedCameraDevice: AVCaptureDevice?
+    
     // MARK: - Camera Properties
     var captureSession: AVCaptureSession?
     var photoOutput: AVCapturePhotoOutput?
@@ -27,7 +36,11 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Other Properties
     private var countdownTimer: Timer?
+    var minimumDisplayTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
+    
+    // MARK: - Settings
+    @AppStorage("minimumDisplayDuration") var minimumDisplayDuration = 10.0
     
     // MARK: - Themes
     let themes: [PhotoTheme] = [
@@ -46,6 +59,11 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         super.init()
         setupServices()
         setupCamera()
+    }
+    
+    deinit {
+        minimumDisplayTimer?.invalidate()
+        countdownTimer?.invalidate()
     }
     
     // MARK: - Setup
@@ -93,33 +111,158 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         findAndSetupContinuityCamera()
     }
     
+
+    
     // MARK: - Camera Methods
-    func findAndSetupContinuityCamera() {
-        // Look for available cameras
+    func refreshAvailableCameras() {
+        print("🔍 [DEBUG] Starting comprehensive camera discovery...")
+        
+        // Try multiple discovery approaches for better iPhone detection
+        let allDeviceTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera,
+            .continuityCamera,
+            .external,
+            .externalUnknown
+        ]
+        
+        print("🔍 [DEBUG] Searching for device types: \(allDeviceTypes.map { $0.rawValue })")
+        
         let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external],
+            deviceTypes: allDeviceTypes,
             mediaType: .video,
             position: .unspecified
         )
         
-        print("🔍 [DEBUG] Available cameras:")
-        for device in discoverySession.devices {
-            print("   - \(device.localizedName) (Type: \(device.deviceType.rawValue))")
+        availableCameras = discoverySession.devices
+        print("🔍 [DEBUG] Found \(availableCameras.count) total cameras:")
+        
+        for (index, device) in availableCameras.enumerated() {
+            let isConnected = device.isConnected ? "✅ Connected" : "❌ Disconnected"
+            let position = device.position.description
+            print("   \(index + 1). \(device.localizedName)")
+            print("      Type: \(device.deviceType.rawValue)")
+            print("      Position: \(position)")
+            print("      Status: \(isConnected)")
+            print("      Unique ID: \(device.uniqueID)")
+            
+            // Special detection for potential iPhones
+            if device.localizedName.lowercased().contains("iphone") ||
+               device.localizedName.lowercased().contains("charlie") ||
+               device.localizedName.contains("15 Pro") ||
+               device.deviceType == .continuityCamera ||
+               device.deviceType == .external {
+                print("      ⭐ POTENTIAL CONTINUITY CAMERA DETECTED!")
+            }
         }
+        
+        // Also try the default video devices approach
+        let defaultDevices = AVCaptureDevice.devices(for: .video)
+        print("🔍 [DEBUG] Default video devices: \(defaultDevices.count)")
+        for device in defaultDevices {
+            if !availableCameras.contains(device) {
+                print("   Additional device: \(device.localizedName) (Type: \(device.deviceType.rawValue))")
+                availableCameras.append(device)
+            }
+        }
+        
+        print("🔍 [DEBUG] Total cameras after comprehensive search: \(availableCameras.count)")
+    }
+    
+    func selectCamera(_ device: AVCaptureDevice) {
+        print("📱 [DEBUG] Manually selecting camera: \(device.localizedName)")
+        selectedCameraDevice = device
+        setupCamera(with: device)
+    }
+    
+    func forceContinuityCameraConnection() {
+        print("📱 [DEBUG] Forcing Continuity Camera connection...")
+        refreshAvailableCameras()
+        
+        // Look for Charlie's iPhone specifically first
+        if let charlieCamera = availableCameras.first(where: { 
+            $0.localizedName.contains("Charlie") || $0.localizedName.contains("15 Pro")
+        }) {
+            print("📱 Found Charlie's iPhone: \(charlieCamera.localizedName)")
+            selectCamera(charlieCamera)
+        }
+        // Then look for continuity camera type
+        else if let continuityCamera = availableCameras.first(where: { $0.deviceType == .continuityCamera }) {
+            print("📱 Found Continuity Camera: \(continuityCamera.localizedName)")
+            selectCamera(continuityCamera)
+        }
+        // Then look for external cameras
+        else if let externalCamera = availableCameras.first(where: { $0.deviceType == .external }) {
+            print("📱 Found external camera: \(externalCamera.localizedName)")
+            selectCamera(externalCamera)
+        } else {
+            print("❌ No Continuity Camera found")
+            showError(message: getContinuityCameraSetupHelp())
+        }
+    }
+    
+    private func getContinuityCameraSetupHelp() -> String {
+        return """
+        Continuity Camera not found. To set up Continuity Camera:
+        
+        📱 **iPhone Setup:**
+        1. iPhone must be running iOS 16 or later
+        2. Sign in with the same Apple ID as your Mac
+        3. Enable Two-Factor Authentication
+        4. Turn on Bluetooth and Wi-Fi
+        
+        💻 **Mac Setup:**
+        1. Mac must be running macOS Ventura 13 or later
+        2. Sign in with same Apple ID as iPhone
+        3. Enable Bluetooth and Wi-Fi
+        4. Make sure both devices are on the same network
+        
+        🔗 **Connection Steps:**
+        1. Place iPhone on a stand/tripod in landscape orientation
+        2. Lock the iPhone screen (press power button)
+        3. Keep iPhone close to Mac (within Bluetooth range)
+        4. Wait 10-15 seconds for automatic detection
+        5. iPhone should appear in camera list automatically
+        
+        💡 **Troubleshooting:**
+        - Try turning Bluetooth off/on on both devices
+        - Restart both iPhone and Mac
+        - Check that Continuity Camera is enabled in iPhone Settings > General > AirPlay & Handoff
+        - Make sure both devices are signed into the same iCloud account
+        """
+    }
+    
+    func findAndSetupContinuityCamera() {
+        // Use the simple approach that was working
+        refreshAvailableCameras()
         
         // Try to find the best available camera
         var selectedCamera: AVCaptureDevice?
         
-        // First try external cameras (includes Continuity Camera)
-        if let externalCamera = discoverySession.devices.first(where: { $0.deviceType == .external }) {
-            print("📱 Found external camera (likely Continuity Camera): \(externalCamera.localizedName)")
+        // First look for Charlie's iPhone specifically
+        if let charlieCamera = availableCameras.first(where: { 
+            $0.localizedName.contains("Charlie") || $0.localizedName.contains("15 Pro")
+        }) {
+            print("📱 Found Charlie's iPhone: \(charlieCamera.localizedName)")
+            selectedCamera = charlieCamera
+        }
+        // Then try continuity camera type
+        else if let continuityCamera = availableCameras.first(where: { $0.deviceType == .continuityCamera }) {
+            print("📱 Found Continuity Camera: \(continuityCamera.localizedName)")
+            selectedCamera = continuityCamera
+        }
+        // Then try external cameras
+        else if let externalCamera = availableCameras.first(where: { $0.deviceType == .external }) {
+            print("📱 Found external camera: \(externalCamera.localizedName)")
             selectedCamera = externalCamera
-        } else if let builtInCamera = discoverySession.devices.first(where: { $0.deviceType == .builtInWideAngleCamera }) {
+        }
+        // Fallback to built-in camera
+        else if let builtInCamera = availableCameras.first(where: { $0.deviceType == .builtInWideAngleCamera }) {
             print("💻 Using built-in camera: \(builtInCamera.localizedName)")
             selectedCamera = builtInCamera
         }
         
         if let camera = selectedCamera {
+            selectedCameraDevice = camera
             setupCamera(with: camera)
         } else {
             print("❌ No camera found")
@@ -173,6 +316,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     func startCapture() {
         print("🎬 [DEBUG] Starting photo capture workflow")
         print("🎨 [DEBUG] Selected theme: \(selectedTheme?.name ?? "None")")
+        print("🔍 [DEBUG] ViewModel object ID: \(ObjectIdentifier(self))")
         
         guard selectedTheme != nil else {
             print("❌ [DEBUG] No theme selected")
@@ -180,26 +324,72 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             return
         }
         
-        print("✅ [DEBUG] Starting countdown...")
-        isCountingDown = true
-        countdown = 3
+        // Cancel any existing countdown timer
+        countdownTimer?.invalidate()
         
-        // Play countdown sound
+        print("✅ [DEBUG] Starting countdown timer...")
+        
+        // Start countdown with explicit animation
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isCountingDown = true
+            countdown = 3
+        }
+        
+        print("🔍 [DEBUG] Countdown state set - isCountingDown: \(isCountingDown), countdown: \(countdown)")
+        print("🖥️ [DEBUG] Countdown overlay should now be VISIBLE")
+        print("📺 [DEBUG] Notifying projector to start countdown...")
+        
+        // Notify projector to start countdown
+        NotificationCenter.default.post(
+            name: .countdownStart,
+            object: nil
+        )
+        
+        // Play initial countdown sound
         AudioServicesPlaySystemSound(1057) // Tock sound
         
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+        // Start countdown timer
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             DispatchQueue.main.async {
-                self.countdown -= 1
-                print("⏰ [DEBUG] Countdown: \(self.countdown)")
+                guard let self = self else {
+                    timer.invalidate()
+                    return
+                }
                 
-                if self.countdown > 0 {
+                print("⏰ [DEBUG] Countdown tick - current: \(self.countdown), isCountingDown: \(self.isCountingDown)")
+                
+                if self.countdown > 1 {
+                    // Continue countdown
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        self.countdown -= 1
+                    }
                     AudioServicesPlaySystemSound(1057) // Tock sound
+                    print("⏰ [DEBUG] Countdown updated to: \(self.countdown)")
+                    print("🖥️ [DEBUG] Overlay showing: \(self.countdown)")
                 } else {
-                    print("📸 [DEBUG] Countdown finished, taking photo...")
+                    // Countdown finished - show camera icon
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        self.countdown = 0
+                    }
+                    print("📸 [DEBUG] Countdown finished, showing camera icon...")
+                    print("🖥️ [DEBUG] Overlay showing: 📸")
+                    
                     AudioServicesPlaySystemSound(1108) // Camera shutter sound
                     timer.invalidate()
-                    self.isCountingDown = false
+                    self.countdownTimer = nil
+                    
+                    // Start photo capture
                     self.capturePhoto()
+                    
+                    // Keep countdown overlay visible briefly to show camera icon
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            self.isCountingDown = false
+                        }
+                        print("🔍 [DEBUG] Countdown ended - isCountingDown: \(self.isCountingDown)")
+                        print("🖥️ [DEBUG] Countdown overlay should now be HIDDEN")
+                        print("✅ [DEBUG] Countdown sequence complete")
+                    }
                 }
             }
         }
@@ -490,6 +680,13 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     private func showError(message: String) {
         errorMessage = message
         showError = true
+        
+        // Notify projector to show error
+        NotificationCenter.default.post(
+            name: .showError,
+            object: nil,
+            userInfo: ["message": message]
+        )
     }
     
     private func getFriendlyErrorMessage(for error: Error) -> String {
@@ -571,4 +768,20 @@ enum PhotoBoothError: Error {
 
 extension Notification.Name {
     static let newPhotoCapture = Notification.Name("newPhotoCapture")
+}
+
+// MARK: - Extensions
+extension AVCaptureDevice.Position {
+    var description: String {
+        switch self {
+        case .back:
+            return "Back"
+        case .front:
+            return "Front"
+        case .unspecified:
+            return "Unspecified"
+        @unknown default:
+            return "Unknown"
+        }
+    }
 } 

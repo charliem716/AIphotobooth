@@ -3,7 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("fadeRevealDuration") private var fadeRevealDuration = 1.0
     @AppStorage("warningDuration") private var warningDuration = 3.0
+    @AppStorage("minimumDisplayDuration") private var minimumDisplayDuration = 10.0
     @AppStorage("cacheRetentionDays") private var cacheRetentionDays = 7
+    @AppStorage("singleDisplayMode") private var singleDisplayMode = false
+    @AppStorage("autoShowProjector") private var autoShowProjector = true
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var projectorManager: ProjectorWindowManager
     
@@ -20,11 +23,11 @@ struct SettingsView: View {
                         HStack {
                             Text("Display Configuration:")
                             Spacer()
-                            if NSScreen.screens.count <= 1 {
+                            if projectorManager.availableDisplays.count <= 1 {
                                 Text("Single Display")
                                     .foregroundColor(.secondary)
                             } else {
-                                Text("Multi-Display")
+                                Text("Multi-Display (\(projectorManager.availableDisplays.count) screens)")
                                     .foregroundColor(.green)
                             }
                         }
@@ -33,7 +36,7 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
-                        if NSScreen.screens.count <= 1 {
+                        if projectorManager.availableDisplays.count <= 1 {
                             Text("⚠️ Connect a second display to use projector features")
                                 .font(.caption)
                                 .foregroundColor(.orange)
@@ -44,7 +47,7 @@ struct SettingsView: View {
                         }
                         
                         // Manual projector controls
-                        if NSScreen.screens.count > 1 {
+                        if projectorManager.availableDisplays.count > 1 {
                             HStack {
                                 Button(projectorManager.isProjectorWindowVisible ? "Hide Projector" : "Show Projector") {
                                     if projectorManager.isProjectorWindowVisible {
@@ -90,6 +93,26 @@ struct SettingsView: View {
                             .frame(width: 200)
                         Text("\(warningDuration, specifier: "%.0f")s")
                             .frame(width: 50)
+                    }
+                    
+                    HStack {
+                        Text("Minimum Display Duration:")
+                        Slider(value: $minimumDisplayDuration, in: 5.0...30.0, step: 1.0)
+                            .frame(width: 200)
+                        Text("\(minimumDisplayDuration, specifier: "%.0f")s")
+                            .frame(width: 50)
+                    }
+                    
+                    HStack {
+                        Text("Single Display Mode:")
+                        Spacer()
+                        Toggle("", isOn: $singleDisplayMode)
+                    }
+                    
+                    HStack {
+                        Text("Auto-Show Projector:")
+                        Spacer()
+                        Toggle("", isOn: $autoShowProjector)
                     }
                 }
                 .padding()

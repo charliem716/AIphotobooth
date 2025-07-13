@@ -3,6 +3,7 @@ import SwiftDotenv
 
 @main
 struct PhotoBoothApp: App {
+    @StateObject private var sharedViewModel = PhotoBoothViewModel()
     @StateObject private var projectorManager = ProjectorWindowManager()
     
     init() {
@@ -17,7 +18,7 @@ struct PhotoBoothApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(PhotoBoothViewModel())
+                .environmentObject(sharedViewModel)
                 .environmentObject(projectorManager)
         }
         .windowResizability(.contentSize)
