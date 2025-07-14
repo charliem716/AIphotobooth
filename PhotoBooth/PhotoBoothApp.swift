@@ -3,7 +3,7 @@ import SwiftDotenv
 
 @main
 struct PhotoBoothApp: App {
-    @StateObject private var sharedViewModel = PhotoBoothViewModel()
+    @StateObject private var sharedViewModel = RefactoredPhotoBoothViewModel()
     @StateObject private var projectorManager = ProjectorWindowManager()
     
     init() {
@@ -11,7 +11,7 @@ struct PhotoBoothApp: App {
         do {
             try Dotenv.configure()
         } catch {
-            logWarning("\(LoggingService.Emoji.config) Could not load .env file", category: .configuration)
+            print("Warning: Could not load .env file: \(error)")
         }
     }
     

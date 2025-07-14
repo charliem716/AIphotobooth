@@ -57,6 +57,6 @@ struct ProjectorCountdownView: View {
 
 #Preview {
     ProjectorCountdownView(session: nil)
-                    .environmentObject(RefactoredPhotoBoothViewModel())
+        .environmentObject(PhotoBoothViewModel())
         .frame(width: 800, height: 600)
 } 

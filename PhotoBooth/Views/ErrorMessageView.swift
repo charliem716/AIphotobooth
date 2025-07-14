@@ -70,9 +70,8 @@ struct ErrorMessageView: View {
             }
         }
         .onAppear {
-            // Show retry button after 2 seconds using modern async patterns
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2.0))
+            // Show retry button after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 withAnimation(.easeInOut(duration: 0.5)) {
                     showRetryButton = true
                 }

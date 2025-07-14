@@ -15,6 +15,7 @@ class SlideShowViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     // MARK: - Private Properties
+    private var slideTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private let boothDirectory: URL
     
@@ -23,6 +24,7 @@ class SlideShowViewModel: ObservableObject {
     private let cacheSize = 5 // Pre-load next 5 photo pairs
     
     // MARK: - Background Scanning Properties
+    private var backgroundScanTimer: Timer?
     private let scanInterval: TimeInterval = 10.0 // Scan every 10 seconds
     
     // MARK: - Initialization
@@ -72,10 +74,9 @@ class SlideShowViewModel: ObservableObject {
         
         print("🎬 Slideshow started with \(photoPairs.count) photo pairs - isActive: \(isActive)")
         
-        // Add a delay to check if it immediately becomes inactive using modern async
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.0))
-            logDebug("\(LoggingService.Emoji.debug) One second later - isActive: \(self.isActive)", category: .slideshow)
+        // Add a delay to check if it immediately becomes inactive
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            print("🎬 One second later - isActive: \(self.isActive)")
         }
     }
     
@@ -85,7 +86,8 @@ class SlideShowViewModel: ObservableObject {
         print("🛑 Call stack: \(Thread.callStackSymbols.prefix(5))")
         
         isActive = false
-        // Modern async patterns handle cleanup automatically
+        slideTimer?.invalidate()
+        slideTimer = nil
         errorMessage = nil
         
         // Stop background scanning
@@ -268,20 +270,25 @@ class SlideShowViewModel: ObservableObject {
     
     // MARK: - Background Scanning
     
-    /// Start periodic background scanning for new photos using modern async patterns
+    /// Start periodic background scanning for new photos
     private func startBackgroundScanning() {
-        logDebug("\(LoggingService.Emoji.refresh) Background photo scanning started (every \(scanInterval)s)", category: .slideshow)
+        // Stop any existing timer
+        stopBackgroundScanning()
         
-        // Start modern async background scanning
-        Task { @MainActor in
-            await runBackgroundScanning()
+        backgroundScanTimer = Timer.scheduledTimer(withTimeInterval: scanInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.performBackgroundScan()
+            }
         }
+        
+        print("🔄 Background photo scanning started (every \(scanInterval)s)")
     }
     
-    /// Stop background scanning (modernized for async patterns)
+    /// Stop background scanning
     private func stopBackgroundScanning() {
-        logDebug("\(LoggingService.Emoji.debug) Background photo scanning stopped", category: .slideshow)
-        // Async tasks will automatically cancel when isActive becomes false
+        backgroundScanTimer?.invalidate()
+        backgroundScanTimer = nil
+        print("🔄 Background photo scanning stopped")
     }
     
     /// Perform a background scan for new photos
@@ -292,36 +299,21 @@ class SlideShowViewModel: ObservableObject {
         // If new photos were found, update cache
         if photoPairs.count > previousCount {
             let newPhotosCount = photoPairs.count - previousCount
-            logInfo("\(LoggingService.Emoji.camera) Found \(newPhotosCount) new photo pair(s) during background scan", category: .slideshow)
+            print("📸 Found \(newPhotosCount) new photo pair(s) during background scan")
             
             // Update cache to include new photos
             updateImageCache()
         }
     }
     
-    // MARK: - Modern Async Timer Implementations
-    
-    /// Modern async background scanning implementation
-    @MainActor
-    private func runBackgroundScanning() async {
-                 while isActive {
-             try? await Task.sleep(for: .seconds(scanInterval))
-             
-             if isActive {
-                 logDebug("\(LoggingService.Emoji.refresh) Running background photo scan", category: .slideshow)
-                 await performBackgroundScan()
-             }
-         }
-    }
-    
     // MARK: - Private Methods
     
     private func startSlideTimer() {
-        // Start modern async slide timing
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(displayDuration))
-            if isActive {
-                nextPhoto()
+        slideTimer?.invalidate()
+        
+        slideTimer = Timer.scheduledTimer(withTimeInterval: displayDuration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.nextPhoto()
             }
         }
     }

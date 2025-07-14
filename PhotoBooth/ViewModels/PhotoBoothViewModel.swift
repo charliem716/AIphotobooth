@@ -949,7 +949,7 @@ extension PhotoBoothViewModel: @preconcurrency AVCapturePhotoCaptureDelegate {
         }
         
         guard let data = photo.fileDataRepresentation(),
-              let rawImage = NSImage(data: data) else {
+              let image = NSImage(data: data) else {
             print("❌ [DEBUG] Could not get image data from photo")
             Task { @MainActor in
                 showError(message: "Failed to process captured photo")
@@ -960,17 +960,8 @@ extension PhotoBoothViewModel: @preconcurrency AVCapturePhotoCaptureDelegate {
         print("✅ [DEBUG] Photo captured successfully, size: \(data.count) bytes")
         
         Task { @MainActor in
-            logImageDimensions(rawImage, label: "Raw captured image")
-            
-            // 🔧 FIX: Crop to 3:2 aspect ratio immediately after capture
-            guard let croppedImage = cropToLandscape(rawImage) else {
-                print("❌ [DEBUG] Failed to crop captured image to 3:2 aspect ratio")
-                showError(message: "Failed to process captured photo")
-                return
-            }
-            
-            logImageDimensions(croppedImage, label: "Cropped to 3:2 aspect ratio")
-            await processImage(croppedImage)
+            logImageDimensions(image, label: "Captured image")
+            await processImage(image)
         }
     }
 }

@@ -21,15 +21,14 @@ struct ContentView: View {
                 // Auto-show projector on startup if setting is enabled and there are multiple displays
                 // Only if slideshow is not active
                 if autoShowProjector && NSScreen.screens.count > 1 && !projectorManager.isProjectorWindowVisible && !viewModel.isSlideShowActive {
-                    // Modern async delay to ensure viewModel is properly set
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(100))
+                    // Delay slightly to ensure viewModel is properly set
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         projectorManager.showProjectorWindow()
                     }
                 }
                 
                 // Configure main window
-                Task { @MainActor in
+                DispatchQueue.main.async {
                     if let window = NSApplication.shared.mainWindow {
                         window.title = "AI Photo Booth - Control Center"
                         window.titlebarAppearsTransparent = false
@@ -53,7 +52,7 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-                    .environmentObject(RefactoredPhotoBoothViewModel())
+        .environmentObject(PhotoBoothViewModel())
         .environmentObject(ProjectorWindowManager())
 } 
 

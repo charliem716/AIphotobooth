@@ -448,7 +448,7 @@ struct ControlCenterView: View {
     // MARK: - Actions
     private func selectTheme(_ theme: PhotoTheme) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            viewModel.selectTheme(theme)
+            viewModel.selectedTheme = theme
         }
         
         // If in minimum display period, selecting theme prepares for next photo without returning to live feed
@@ -457,7 +457,7 @@ struct ControlCenterView: View {
                 viewModel.isInMinimumDisplayPeriod = false
                 viewModel.isReadyForNextPhoto = true
             }
-            // Timer invalidation is handled automatically by modern async patterns
+            viewModel.minimumDisplayTimer?.invalidate()
             
             // Stay on themed image display - don't reset to live camera
             // The themed image will remain visible until user takes next photo
@@ -529,7 +529,7 @@ struct StatusRow: View {
 
 #Preview {
     ControlCenterView()
-                    .environmentObject(RefactoredPhotoBoothViewModel())
+        .environmentObject(PhotoBoothViewModel())
         .environmentObject(ProjectorWindowManager())
         .frame(width: 800, height: 600)
 } 

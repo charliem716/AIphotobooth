@@ -28,7 +28,7 @@ struct CameraPreviewView: NSViewRepresentable {
         }
         
         // Update frame on size changes
-        Task { @MainActor in
+        DispatchQueue.main.async {
             layer.frame = nsView.bounds
         }
     }
