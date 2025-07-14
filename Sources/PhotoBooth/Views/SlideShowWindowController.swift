@@ -41,9 +41,19 @@ class SlideShowWindowController: NSWindowController {
         
         window.contentViewController = hostingController
         
-        // Determine optimal display with fallback
+        // Determine optimal display with fallback - prefer secondary display
         let targetScreen = getOptimalDisplayWithFallback()
-        positionWindowOnScreen(targetScreen)
+        
+        print("📺 Slideshow will launch on: \(targetScreen.localizedName)")
+        
+        // Add delay to ensure projector window has fully hidden/exited fullscreen if it was visible
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            self.positionWindowOnScreen(targetScreen)
+            
+            // Ensure window is positioned correctly and stays on target screen  
+            window.setFrame(window.frame, display: true)
+            print("📺 Slideshow positioned on: \(targetScreen.localizedName)")
+        }
         
         // Log initial display configuration
         logDisplayStatus()
@@ -104,17 +114,16 @@ class SlideShowWindowController: NSWindowController {
     private func getOptimalDisplay() -> NSScreen {
         let screens = NSScreen.screens
         
-        // Prefer secondary display if available
+        // ALWAYS prefer secondary display if available - slideshow should take precedence
         if screens.count > 1 {
-            // Find the screen that's not the main screen
-            for screen in screens {
-                if screen != NSScreen.main {
-                    return screen
-                }
-            }
+            // Always use the second screen (index 1) for slideshow
+            let secondaryScreen = screens[1]
+            print("📺 [SLIDESHOW] Forcing slideshow to secondary display: \(secondaryScreen.localizedName)")
+            return secondaryScreen
         }
         
-        // Fallback to main screen
+        // Only fallback to main screen if no secondary display exists
+        print("📺 [SLIDESHOW] No secondary display available, using main screen")
         return NSScreen.main ?? screens.first!
     }
     
@@ -161,12 +170,22 @@ extension SlideShowWindowController: NSWindowDelegate {
     }
     
     func windowDidEnterFullScreen(_ notification: Notification) {
-        print("📺 Slideshow entered fullscreen mode")
+        print("📺 Slideshow entered fullscreen mode successfully")
+        print("📺 Slideshow ViewModel active: \(slideShowViewModel?.isActive ?? false)")
     }
     
     func windowDidExitFullScreen(_ notification: Notification) {
         print("📺 Slideshow exited fullscreen mode")
+        print("📺 Slideshow ViewModel active: \(slideShowViewModel?.isActive ?? false)")
         // Don't auto-close when exiting fullscreen anymore
+    }
+    
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        print("📺 Slideshow WILL enter fullscreen mode")
+    }
+    
+    func windowWillExitFullScreen(_ notification: Notification) {
+        print("📺 Slideshow WILL exit fullscreen mode") 
     }
     
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -205,6 +224,12 @@ extension SlideShowWindowController {
         
         print("📺 Display configuration changed, adapting slideshow...")
         
+        // If window is in fullscreen mode, don't move it around
+        if window.styleMask.contains(.fullScreen) {
+            print("📺 Window is in fullscreen - ignoring display change to prevent repositioning")
+            return
+        }
+        
         // Get current and new optimal displays with fallback
         let currentScreen = window.screen
         let newOptimalScreen = getOptimalDisplayWithFallback()
@@ -212,21 +237,9 @@ extension SlideShowWindowController {
         // Check if we need to move to a different display
         if currentScreen != newOptimalScreen {
             print("📺 Moving slideshow from \(currentScreen?.localizedName ?? "Unknown") to \(newOptimalScreen.localizedName)")
-            
-            // Exit fullscreen on current display
-            if window.styleMask.contains(.fullScreen) {
-                window.toggleFullScreen(nil)
-                
-                // Wait for fullscreen exit, then move and re-enter fullscreen
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    self.positionWindowOnScreen(newOptimalScreen)
-                    window.toggleFullScreen(nil)
-                }
-            } else {
-                positionWindowOnScreen(newOptimalScreen)
-            }
+            positionWindowOnScreen(newOptimalScreen)
         } else {
-            // Same display, just update position if needed
+            // Same display, just update position if needed (but only if not fullscreen)
             print("📺 Adjusting position on current display")
             positionWindowOnScreen(newOptimalScreen)
         }

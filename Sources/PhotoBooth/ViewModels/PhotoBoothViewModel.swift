@@ -48,6 +48,9 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     var minimumDisplayTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
+    // MARK: - Photo Session Properties
+    private var currentPhotoTimestamp: TimeInterval?
+    
     // MARK: - Settings
     @AppStorage("minimumDisplayDuration") var minimumDisplayDuration = 10.0
     
@@ -457,6 +460,10 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             return
         }
         
+        // Generate shared timestamp for this photo session
+        currentPhotoTimestamp = Date().timeIntervalSince1970
+        print("📸 [DEBUG] Generated shared timestamp: \(currentPhotoTimestamp!)")
+        
         let settings = AVCapturePhotoSettings()
         settings.isHighResolutionPhotoEnabled = true
         
@@ -471,8 +478,9 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         print("🎨 [DEBUG] OpenAI configured: \(openAI != nil ? "YES" : "NO")")
         
         guard let theme = selectedTheme,
+              let timestamp = currentPhotoTimestamp,
               openAI != nil else { 
-            print("❌ [DEBUG] Missing theme or OpenAI service")
+            print("❌ [DEBUG] Missing theme, timestamp, or OpenAI service")
             return 
         }
         
@@ -482,8 +490,8 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         lastCapturedImage = image
         
         do {
-            // Save original image
-            let originalPath = try await saveOriginalImage(image)
+            // Save original image with shared timestamp
+            let originalPath = try await saveOriginalImage(image, timestamp: timestamp)
             print("💾 Original photo saved to: \(originalPath.path)")
             
             // Notify projector to show original image immediately
@@ -520,8 +528,8 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 ]
             )
             
-            // Save themed image
-            let themedPath = try await saveThemedImage(themedImage)
+            // Save themed image with same timestamp
+            let themedPath = try await saveThemedImage(themedImage, timestamp: timestamp)
             print("💾 Themed photo saved to: \(themedPath.path)")
             
             // Show success message
@@ -544,6 +552,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             // Reset theme selection to force user to choose theme for next photo
             await MainActor.run {
                 selectedTheme = nil
+                currentPhotoTimestamp = nil // Clear timestamp after successful completion
                 print("🔄 Theme selection reset - user must choose theme for next photo")
             }
             
@@ -557,6 +566,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
                 showError(message: friendlyMessage)
                 // Also reset theme on error
                 selectedTheme = nil
+                currentPhotoTimestamp = nil // Clear timestamp after error
             }
         }
         
@@ -768,13 +778,13 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         return newImage
     }
     
-    private func saveOriginalImage(_ image: NSImage) async throws -> URL {
+    private func saveOriginalImage(_ image: NSImage, timestamp: TimeInterval) async throws -> URL {
         let picturesURL = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first!
         let boothURL = picturesURL.appendingPathComponent("booth")
         
         try FileManager.default.createDirectory(at: boothURL, withIntermediateDirectories: true)
         
-        let fileName = "original_\(Date().timeIntervalSince1970).jpg"
+        let fileName = "original_\(timestamp).jpg"
         let fileURL = boothURL.appendingPathComponent(fileName)
         
         // Crop the original image to 1536x1024 landscape for consistency with themed images
@@ -790,11 +800,11 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         return fileURL
     }
     
-    private func saveThemedImage(_ image: NSImage) async throws -> URL {
+    private func saveThemedImage(_ image: NSImage, timestamp: TimeInterval) async throws -> URL {
         let picturesURL = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first!
         let boothURL = picturesURL.appendingPathComponent("booth")
         
-        let fileName = "themed_\(Date().timeIntervalSince1970).jpg"
+        let fileName = "themed_\(timestamp).jpg"
         let fileURL = boothURL.appendingPathComponent(fileName)
         
         guard let tiffData = image.tiffRepresentation,

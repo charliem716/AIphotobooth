@@ -118,10 +118,14 @@ struct SlideShowView: View {
         .onAppear {
             print("🎬 SlideShowView appeared, slideshow active: \(slideShowViewModel.isActive)")
         }
-        .onKeyPress(.escape) {
-            print("🎬 ESC key pressed in slideshow")
-            slideShowViewModel.stopSlideshow()
-            return .handled
+        .onKeyPress { keyPress in
+            // Only handle ESC key when no modifiers are pressed
+            if keyPress.key == .escape && keyPress.modifiers.isEmpty {
+                print("🎬 ESC key pressed in slideshow (no modifiers)")
+                slideShowViewModel.stopSlideshow()
+                return .handled
+            }
+            return .ignored
         }
     }
 }

@@ -320,37 +320,38 @@ class SlideShowViewModel: ObservableObject {
     
     private func discoverPhotoPairs(from files: [URL]) async -> [PhotoPair] {
         var pairs: [PhotoPair] = []
-        var originalFiles: [(url: URL, baseTimestamp: Int)] = []
-        var themedFiles: [(url: URL, baseTimestamp: Int)] = []
+        var originalFiles: [(url: URL, timestamp: String)] = []
+        var themedFiles: [(url: URL, timestamp: String)] = []
         
-        // Parse and group files by base timestamp (before decimal point)
+        // Parse and group files by exact timestamp
         for file in files {
             let filename = file.lastPathComponent
             
             if filename.hasPrefix("original_") && filename.hasSuffix(".jpg") {
                 let timestampString = String(filename.dropFirst("original_".count).dropLast(".jpg".count))
-                if let baseTimestamp = extractBaseTimestamp(from: timestampString) {
-                    originalFiles.append((url: file, baseTimestamp: baseTimestamp))
-                }
+                originalFiles.append((url: file, timestamp: timestampString))
             } else if filename.hasPrefix("themed_") && filename.hasSuffix(".jpg") {
                 let timestampString = String(filename.dropFirst("themed_".count).dropLast(".jpg".count))
-                if let baseTimestamp = extractBaseTimestamp(from: timestampString) {
-                    themedFiles.append((url: file, baseTimestamp: baseTimestamp))
-                }
+                themedFiles.append((url: file, timestamp: timestampString))
             }
         }
         
         print("📸 Found \(originalFiles.count) original files and \(themedFiles.count) themed files")
         
-        // Match original and themed files by proximity (within ~5 minutes)
+        // Match original and themed files by exact timestamp
         for original in originalFiles {
-            // Find the closest themed file within 5 minutes (300 seconds)
+            // Find themed file with exact matching timestamp
             let matchingThemed = themedFiles.first { themed in
-                abs(themed.baseTimestamp - original.baseTimestamp) <= 300
+                themed.timestamp == original.timestamp
             }
             
             if let themed = matchingThemed {
-                let date = Date(timeIntervalSince1970: TimeInterval(original.baseTimestamp))
+                // Convert timestamp string to TimeInterval for PhotoPair
+                guard let timestampDouble = Double(original.timestamp) else {
+                    print("⚠️ Invalid timestamp format: \(original.timestamp)")
+                    continue
+                }
+                let date = Date(timeIntervalSince1970: timestampDouble)
                 
                 if let photoPair = PhotoPair(originalURL: original.url, themedURL: themed.url, timestamp: date) {
                     pairs.append(photoPair)
@@ -366,16 +367,7 @@ class SlideShowViewModel: ObservableObject {
         return pairs
     }
     
-    /// Extract base timestamp (integer part before decimal) from timestamp string
-    private func extractBaseTimestamp(from timestampString: String) -> Int? {
-        // Handle both "1234567890.123" and "1234567890" formats
-        let components = timestampString.components(separatedBy: ".")
-        guard let firstComponent = components.first,
-              let baseTimestamp = Int(firstComponent) else {
-            return nil
-        }
-        return baseTimestamp
-    }
+
     
     // MARK: - Error Handling
     

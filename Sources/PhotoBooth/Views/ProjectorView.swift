@@ -28,7 +28,6 @@ struct ProjectorView: View {
     @EnvironmentObject var viewModel: PhotoBoothViewModel
     @State private var originalImage: NSImage?
     @State private var themedImage: NSImage?
-    @State private var showThemed = false
     @State private var showControls = false
     @State private var isFullscreen = false
     @State private var projectorState: ProjectorState = .liveCamera
@@ -37,7 +36,6 @@ struct ProjectorView: View {
     @State private var warningCountdown = 3
     @State private var selectedThemeName: String = ""
     @State private var errorMessage: String = ""
-    @AppStorage("fadeRevealDuration") private var fadeRevealDuration = 1.0
     @AppStorage("warningDuration") private var warningDuration = 3.0
     
     private let photoPublisher = NotificationCenter.default
@@ -239,8 +237,6 @@ struct ProjectorView: View {
                 Image(nsImage: themedImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .opacity(showThemed ? 1 : 0)
-                    .animation(.easeInOut(duration: fadeRevealDuration), value: showThemed)
             }
         }
     }
@@ -350,20 +346,11 @@ struct ProjectorView: View {
     }
     
     private func showThemedImage() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            projectorState = .showingThemed
-        }
-        showThemed = false
+        // Instant transition to themed image - no fade animation
+        projectorState = .showingThemed
         
-        // Trigger fade animation
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            withAnimation(.easeInOut(duration: fadeRevealDuration)) {
-                showThemed = true
-            }
-        }
-        
-        // After fade animation, enter minimum display period
-        DispatchQueue.main.asyncAfter(deadline: .now() + fadeRevealDuration + 0.5) {
+        // Immediately enter minimum display period
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             withAnimation(.easeInOut(duration: 0.3)) {
                 projectorState = .minimumDisplay
             }
@@ -394,7 +381,6 @@ struct ProjectorView: View {
         projectorState = .liveCamera
         originalImage = nil
         themedImage = nil
-        showThemed = false
         showWarning = false
         processingStartTime = nil
         selectedThemeName = ""
@@ -658,8 +644,24 @@ class ProjectorWindowManager: ObservableObject {
     }
     
     func hideProjectorWindow() {
-        projectorWindow?.orderOut(nil)
-        isProjectorWindowVisible = false
+        guard let window = projectorWindow else { return }
+        
+        // If window is in fullscreen, exit fullscreen first
+        if window.styleMask.contains(.fullScreen) {
+            print("📺 [PROJECTOR] Exiting fullscreen before hiding...")
+            window.toggleFullScreen(nil)
+            
+            // Wait for fullscreen exit, then hide
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                window.orderOut(nil)
+                self.isProjectorWindowVisible = false
+                print("📺 [PROJECTOR] Window hidden after fullscreen exit")
+            }
+        } else {
+            window.orderOut(nil)
+            isProjectorWindowVisible = false
+            print("📺 [PROJECTOR] Window hidden immediately")
+        }
     }
     
     func closeProjectorWindow() {
