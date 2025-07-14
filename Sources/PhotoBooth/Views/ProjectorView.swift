@@ -9,6 +9,8 @@ extension Notification.Name {
     static let countdownStart = Notification.Name("countdownStart")
     static let showError = Notification.Name("showError")
     static let returnToLiveCamera = Notification.Name("returnToLiveCamera")
+    static let hideProjectorForSlideshow = Notification.Name("hideProjectorForSlideshow")
+    static let restoreProjectorAfterSlideshow = Notification.Name("restoreProjectorAfterSlideshow")
 }
 
 enum ProjectorState {
@@ -451,10 +453,13 @@ class ProjectorWindowManager: ObservableObject {
     @Published var availableDisplays: [NSScreen] = []
     private var projectorWindow: NSWindow?
     private weak var viewModel: PhotoBoothViewModel?
+    private var wasVisibleBeforeSlideshow = false
+    private var isSlideshowActive = false
     
     init() {
         setupDisplayMonitoring()
         updateAvailableDisplays()
+        setupSlideshowNotifications()
     }
     
     func setViewModel(_ viewModel: PhotoBoothViewModel) {
@@ -478,6 +483,25 @@ class ProjectorWindowManager: ObservableObject {
         )
     }
     
+    private func setupSlideshowNotifications() {
+        print("🎬 Setting up slideshow notifications in ProjectorWindowManager")
+        // Listen for slideshow start/stop notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleHideProjectorForSlideshow),
+            name: .hideProjectorForSlideshow,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleRestoreProjectorAfterSlideshow),
+            name: .restoreProjectorAfterSlideshow,
+            object: nil
+        )
+        print("🎬 Slideshow notification observers set up")
+    }
+    
     @objc private func displayConfigurationChanged() {
         print("🔍 Display configuration changed")
         updateAvailableDisplays()
@@ -487,10 +511,12 @@ class ProjectorWindowManager: ObservableObject {
             print("⚠️ External display disconnected, hiding projector window")
             hideProjectorWindow()
         }
-        // If projector was hidden due to single display and now we have multiple, show it
-        else if !isProjectorWindowVisible && NSScreen.screens.count > 1 {
-            print("✅ External display connected, showing projector window")
+        // Only auto-show projector if slideshow is NOT active
+        else if !isProjectorWindowVisible && NSScreen.screens.count > 1 && !isSlideshowActive {
+            print("✅ External display connected and slideshow not active, showing projector window")
             showProjectorWindow()
+        } else if !isProjectorWindowVisible && NSScreen.screens.count > 1 && isSlideshowActive {
+            print("🎬 Display change detected but slideshow is active - NOT showing projector")
         }
     }
     
@@ -502,11 +528,40 @@ class ProjectorWindowManager: ObservableObject {
         }
     }
     
+    @objc private func handleHideProjectorForSlideshow() {
+        print("🎬 handleHideProjectorForSlideshow() called!")
+        print("🎬 Current projector window state - isVisible: \(isProjectorWindowVisible)")
+        wasVisibleBeforeSlideshow = isProjectorWindowVisible
+        isSlideshowActive = true
+        if isProjectorWindowVisible {
+            print("🎬 Actually hiding projector window now...")
+            hideProjectorWindow()
+            print("🎬 Projector window hidden - new state: \(isProjectorWindowVisible)")
+        } else {
+            print("🎬 Projector window was already hidden")
+        }
+    }
+    
+    @objc private func handleRestoreProjectorAfterSlideshow() {
+        print("🎬 Restoring projector window after slideshow")
+        isSlideshowActive = false
+        if wasVisibleBeforeSlideshow {
+            showProjectorWindow()
+        }
+        wasVisibleBeforeSlideshow = false
+    }
+    
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
     
     func showProjectorWindow() {
+        // Check if slideshow is active and prevent showing projector
+        if isSlideshowActive {
+            print("🚫 [PROJECTOR] Blocked projector window show - slideshow is active")
+            return
+        }
+        
         // Find external display - always use second screen if available
         let screens = NSScreen.screens
         

@@ -21,6 +21,7 @@ struct ControlCenterView: View {
                                 themeSelectionGrid
                                 takePhotoButton
                                 projectorControls
+                                slideShowControls
                             }
                             .frame(maxWidth: .infinity)
                             
@@ -45,6 +46,7 @@ struct ControlCenterView: View {
                             }
                             
                             projectorControls
+                            slideShowControls
                         }
                         .padding(20)
                     }
@@ -246,6 +248,107 @@ struct ControlCenterView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(!projectorManager.isProjectorWindowVisible)
+            }
+        }
+        .padding(16)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Slideshow Controls
+    private var slideShowControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Slideshow")
+                .font(.headline)
+                .fontWeight(.semibold)
+            
+            // Photo count and status
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Photo Pairs:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(viewModel.slideShowPhotoPairCount)")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                
+                HStack {
+                    Text("Status:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(viewModel.isSlideShowActive ? .green : .gray)
+                            .frame(width: 8, height: 8)
+                        Text(viewModel.isSlideShowActive ? "Running" : "Stopped")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            
+            // Speed control
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Speed: \(String(format: "%.0f", viewModel.slideShowDisplayDuration))s per image")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                
+                Slider(
+                    value: Binding(
+                        get: { viewModel.slideShowDisplayDuration },
+                        set: { viewModel.updateSlideShowDuration($0) }
+                    ),
+                    in: 2...10,
+                    step: 1
+                ) {
+                    Text("Display Duration")
+                }
+                .disabled(viewModel.slideShowPhotoPairCount == 0)
+            }
+            
+            // Control buttons
+            HStack(spacing: 12) {
+                if viewModel.isSlideShowActive {
+                    // Stop button
+                    Button(action: {
+                        viewModel.stopSlideshow()
+                    }) {
+                        HStack {
+                            Image(systemName: "stop.fill")
+                            Text("Stop")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                } else {
+                    // Start button
+                    Button(action: {
+                        viewModel.startSlideshow()
+                    }) {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Start")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.green)
+                    .disabled(viewModel.slideShowPhotoPairCount == 0)
+                }
+            }
+            
+            if viewModel.slideShowPhotoPairCount == 0 {
+                Text("Take some photos to enable slideshow")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .italic()
             }
         }
         .padding(16)

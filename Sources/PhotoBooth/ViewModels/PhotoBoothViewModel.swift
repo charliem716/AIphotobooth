@@ -26,6 +26,11 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     @Published var availableCameras: [AVCaptureDevice] = []
     @Published var selectedCameraDevice: AVCaptureDevice?
     
+    // MARK: - Slideshow Properties
+    @Published var isSlideShowActive = false
+    @Published var slideShowPhotoPairCount = 0
+    @Published var slideShowDisplayDuration: Double = 5.0
+    
     // MARK: - Camera Properties
     var captureSession: AVCaptureSession?
     var photoOutput: AVCapturePhotoOutput?
@@ -33,6 +38,10 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Services
     private var openAI: OpenAI?
+    
+    // MARK: - Slideshow Services
+    private var slideShowViewModel: SlideShowViewModel?
+    private var slideShowWindowController: SlideShowWindowController?
     
     // MARK: - Other Properties
     private var countdownTimer: Timer?
@@ -59,6 +68,7 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         super.init()
         setupServices()
         setupCamera()
+        setupSlideshow()
     }
     
     deinit {
@@ -101,6 +111,44 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             showError(message: "Camera access denied. Please enable camera access in System Preferences.")
         @unknown default:
             showError(message: "Unknown camera permission status.")
+        }
+    }
+    
+    private func setupSlideshow() {
+        print("🎬 Setting up slideshow components...")
+        
+        // Initialize slideshow view model
+        slideShowViewModel = SlideShowViewModel()
+        
+        // Set up listeners for photo pair count updates
+        guard let slideShowViewModel = slideShowViewModel else { return }
+        
+        slideShowViewModel.$photoPairs
+            .sink { [weak self] pairs in
+                Task { @MainActor in
+                    self?.slideShowPhotoPairCount = pairs.count
+                    print("📸 Slideshow photo pair count updated: \(pairs.count)")
+                }
+            }
+            .store(in: &cancellables)
+        
+        // Set up listener for slideshow state changes (only once, not in startSlideshow)
+        slideShowViewModel.$isActive
+            .sink { [weak self] active in
+                print("🎬 SlideShowViewModel.isActive changed to: \(active)")
+                Task { @MainActor in
+                    if !active && self?.isSlideShowActive == true {
+                        print("🎬 SlideShowViewModel became inactive, calling stopSlideshow()")
+                        self?.stopSlideshow()
+                    }
+                }
+            }
+            .store(in: &cancellables)
+        
+        // Scan for existing photos
+        Task {
+            await slideShowViewModel.scanForPhotoPairs()
+            print("🎬 Initial slideshow photo scan completed")
         }
     }
     
@@ -321,6 +369,12 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
             print("❌ [DEBUG] No theme selected")
             showError(message: "Please select a theme first")
             return
+        }
+        
+        // Auto-close slideshow when photo capture starts
+        if isSlideShowActive {
+            print("🎬 Auto-closing slideshow for photo capture")
+            stopSlideshow()
         }
         
         // Cancel any existing countdown timer
@@ -796,6 +850,78 @@ class PhotoBoothViewModel: NSObject, ObservableObject {
         } else {
             return "Something went wrong. Please try the photo booth again!"
         }
+    }
+    
+    // MARK: - Slideshow Methods
+    
+    /// Start the slideshow on secondary display
+    func startSlideshow() {
+        guard !isSlideShowActive else { return }
+        
+        // Hide the projector window before starting slideshow
+        print("🎬 Posting hideProjectorForSlideshow notification...")
+        NotificationCenter.default.post(
+            name: .hideProjectorForSlideshow,
+            object: nil
+        )
+        print("🎬 hideProjectorForSlideshow notification posted")
+        
+        // Initialize slideshow window controller if needed
+        if slideShowWindowController == nil {
+            slideShowWindowController = SlideShowWindowController()
+        }
+        
+        guard let slideShowViewModel = slideShowViewModel,
+              let slideShowWindowController = slideShowWindowController else { 
+            print("❌ Slideshow components not available")
+            return 
+        }
+        
+        // Set up slideshow display duration
+        slideShowViewModel.updateDisplayDuration(slideShowDisplayDuration)
+        
+        // Launch slideshow window
+        slideShowWindowController.launchSlideshow(with: slideShowViewModel)
+        
+        // Update state
+        isSlideShowActive = true
+        
+        print("🎬 Slideshow started from control center with \(slideShowPhotoPairCount) photo pairs")
+    }
+    
+    /// Stop the slideshow
+    func stopSlideshow() {
+        print("🛑 PhotoBoothViewModel.stopSlideshow() called - was active: \(isSlideShowActive)")
+        guard isSlideShowActive else { return }
+        
+        slideShowWindowController?.closeSlideshow()
+        isSlideShowActive = false
+        
+        // Restore the projector window immediately since we're not using fullscreen anymore
+        NotificationCenter.default.post(
+            name: .restoreProjectorAfterSlideshow,
+            object: nil
+        )
+        
+        print("🛑 Slideshow stopped from control center")
+    }
+    
+    /// Update slideshow display duration
+    func updateSlideShowDuration(_ duration: Double) {
+        slideShowDisplayDuration = duration
+        slideShowViewModel?.updateDisplayDuration(duration)
+    }
+    
+    /// Check if theme selection should auto-close slideshow
+    func selectTheme(_ theme: PhotoTheme) {
+        // Auto-close slideshow when theme is selected
+        if isSlideShowActive {
+            print("🎨 Theme selected during slideshow - closing slideshow first")
+            stopSlideshow()
+        }
+        
+        selectedTheme = theme
+        print("🎨 Theme selected: \(theme.name)")
     }
 }
 

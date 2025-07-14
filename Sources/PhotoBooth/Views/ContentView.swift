@@ -19,7 +19,8 @@ struct ContentView: View {
                 print("🔗 [DEBUG] Setting projector manager ViewModel to same instance")
                 
                 // Auto-show projector on startup if setting is enabled and there are multiple displays
-                if autoShowProjector && NSScreen.screens.count > 1 && !projectorManager.isProjectorWindowVisible {
+                // Only if slideshow is not active
+                if autoShowProjector && NSScreen.screens.count > 1 && !projectorManager.isProjectorWindowVisible && !viewModel.isSlideShowActive {
                     // Delay slightly to ensure viewModel is properly set
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         projectorManager.showProjectorWindow()
