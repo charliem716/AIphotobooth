@@ -8,7 +8,7 @@ class SlideShowViewModel: ObservableObject {
     @Published var isActive = false
     @Published var photoPairs: [PhotoPair] = []
     @Published var currentPairIndex = 0
-    @Published var displayDuration: Double = 5.0
+    @Published var displayDuration: Double = 5.0  // 5 seconds for each image (original and themed)
     @Published var isShowingOriginal = true
     @Published var lastFolderScan = Date.distantPast
     @Published var isLoading = false
@@ -17,6 +17,7 @@ class SlideShowViewModel: ObservableObject {
     // MARK: - Private Properties
     private var cancellables = Set<AnyCancellable>()
     private let boothDirectory: URL
+    private var currentTimerTask: Task<Void, Never>?
     
     // MARK: - Caching Properties
     private var imageCache: [Int: PhotoPair] = [:]
@@ -44,20 +45,20 @@ class SlideShowViewModel: ObservableObject {
     
     /// Start the slideshow if photos are available
     func startSlideshow() async {
-        print("🎬 SlideShowViewModel.startSlideshow() called")
+        logInfo("\(LoggingService.Emoji.slideshow) SlideShowViewModel.startSlideshow() called", category: .slideshow)
         
         await scanForPhotoPairs()
-        print("🎬 After scan: found \(photoPairs.count) photo pairs")
+        logInfo("\(LoggingService.Emoji.slideshow) After scan: found \(photoPairs.count) photo pairs", category: .slideshow)
         
         guard !photoPairs.isEmpty else {
-            print("❌ No photo pairs available for slideshow")
+            logWarning("\(LoggingService.Emoji.warning) No photo pairs available for slideshow", category: .slideshow)
             errorMessage = "No photo pairs available for slideshow"
             return
         }
         
-        print("🎬 Setting isActive to true...")
+        logDebug("\(LoggingService.Emoji.slideshow) Setting isActive to true...", category: .slideshow)
         isActive = true
-        print("🎬 isActive is now: \(isActive)")
+        logDebug("\(LoggingService.Emoji.slideshow) isActive is now: \(isActive)", category: .slideshow)
         
         currentPairIndex = 0
         isShowingOriginal = true
@@ -70,7 +71,7 @@ class SlideShowViewModel: ObservableObject {
         
         startSlideTimer()
         
-        print("🎬 Slideshow started with \(photoPairs.count) photo pairs - isActive: \(isActive)")
+        logInfo("\(LoggingService.Emoji.slideshow) Slideshow started with \(photoPairs.count) photo pairs - isActive: \(isActive)", category: .slideshow)
         
         // Add a delay to check if it immediately becomes inactive using modern async
         Task { @MainActor in
@@ -81,10 +82,15 @@ class SlideShowViewModel: ObservableObject {
     
     /// Stop the slideshow and cleanup
     func stopSlideshow() {
-        print("🛑 stopSlideshow() called - was active: \(isActive)")
-        print("🛑 Call stack: \(Thread.callStackSymbols.prefix(5))")
+        logInfo("\(LoggingService.Emoji.slideshow) stopSlideshow() called - was active: \(isActive)", category: .slideshow)
+        logDebug("\(LoggingService.Emoji.slideshow) Call stack: \(Thread.callStackSymbols.prefix(5))", category: .slideshow)
         
         isActive = false
+        
+        // Cancel any running timer task
+        currentTimerTask?.cancel()
+        currentTimerTask = nil
+        
         // Modern async patterns handle cleanup automatically
         errorMessage = nil
         
@@ -94,7 +100,7 @@ class SlideShowViewModel: ObservableObject {
         // Clear cache to free memory
         clearImageCache()
         
-        print("🛑 Slideshow stopped")
+        logInfo("\(LoggingService.Emoji.slideshow) Slideshow stopped")
     }
     
     /// Scan the booth folder for matching photo pairs
@@ -105,7 +111,7 @@ class SlideShowViewModel: ObservableObject {
         do {
             // Check if booth directory exists and is accessible
             if !FileManager.default.fileExists(atPath: boothDirectory.path) {
-                print("📁 Creating booth directory: \(boothDirectory.path)")
+                logInfo("\(LoggingService.Emoji.config) Creating booth directory: \(boothDirectory.path)", category: .slideshow)
                 try FileManager.default.createDirectory(at: boothDirectory, withIntermediateDirectories: true)
                 photoPairs = []
                 isLoading = false
@@ -136,11 +142,11 @@ class SlideShowViewModel: ObservableObject {
                         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
                         let fileSize = attributes[.size] as? Int64 ?? 0
                         if fileSize < 1024 { // Less than 1KB is likely corrupted
-                            print("⚠️ Skipping suspiciously small file: \(filename) (\(fileSize) bytes)")
+                            logWarning("\(LoggingService.Emoji.warning) Skipping suspiciously small file: \(filename) (\(fileSize) bytes)", category: .slideshow)
                             return false
                         }
                     } catch {
-                        print("⚠️ Could not check file size for: \(filename)")
+                        logWarning("\(LoggingService.Emoji.warning) Could not check file size for: \(filename)", category: .slideshow)
                         return false
                     }
                 }
@@ -148,7 +154,7 @@ class SlideShowViewModel: ObservableObject {
                 return isValidPhoto
             }
             
-            print("📸 Scanning \(validFiles.count) valid photo files from \(files.count) total files")
+            logDebug("\(LoggingService.Emoji.slideshow) Scanning \(validFiles.count) valid photo files from \(files.count) total files", category: .slideshow)
             
             let newPairs = await discoverPhotoPairs(from: validFiles)
             
@@ -156,7 +162,7 @@ class SlideShowViewModel: ObservableObject {
             photoPairs = newPairs.sorted(by: >)
             lastFolderScan = Date()
             
-            print("📸 Successfully found \(photoPairs.count) complete photo pairs")
+            logInfo("\(LoggingService.Emoji.slideshow) Successfully found \(photoPairs.count) complete photo pairs", category: .slideshow)
             
             // Clear error if scan was successful
             if !photoPairs.isEmpty {
@@ -166,7 +172,7 @@ class SlideShowViewModel: ObservableObject {
         } catch {
             let friendlyError = getFriendlyErrorMessage(for: error)
             errorMessage = friendlyError
-            print("❌ Error scanning for photo pairs: \(error)")
+            logError("\(LoggingService.Emoji.error) Error scanning for photo pairs: \(error)", category: .slideshow)
         }
         
         isLoading = false
@@ -184,20 +190,27 @@ class SlideShowViewModel: ObservableObject {
     
     /// Advance to the next photo in the slideshow
     func nextPhoto() {
-        guard !photoPairs.isEmpty else { return }
+        guard !photoPairs.isEmpty else { 
+            logWarning("nextPhoto() called but no photo pairs available", category: .slideshow)
+            return 
+        }
         
         if isShowingOriginal {
             // Switch to themed version of current pair
+            logDebug("Switching to themed image for pair \(currentPairIndex + 1)", category: .slideshow)
             isShowingOriginal = false
         } else {
             // Move to next pair and show original
+            let previousIndex = currentPairIndex
             currentPairIndex = (currentPairIndex + 1) % photoPairs.count
+            logDebug("Moving to next pair: \(previousIndex + 1) -> \(currentPairIndex + 1), showing original", category: .slideshow)
             isShowingOriginal = true
             
             // Update cache when moving to new photo pair
             updateImageCache()
         }
         
+        logDebug("Now showing: \(isShowingOriginal ? "Original" : "Themed") image \(currentPairIndex + 1)/\(photoPairs.count)", category: .slideshow)
         startSlideTimer()
     }
     
@@ -257,13 +270,13 @@ class SlideShowViewModel: ObservableObject {
             imageCache[index] = pair
         }
         
-        print("📸 Cached photo pair at index \(index)")
+        logDebug("\(LoggingService.Emoji.slideshow) Cached photo pair at index \(index)", category: .slideshow)
     }
     
     /// Clear all cached images to free memory
     private func clearImageCache() {
         imageCache.removeAll()
-        print("🧹 Image cache cleared")
+        logDebug("\(LoggingService.Emoji.slideshow) Image cache cleared", category: .slideshow)
     }
     
     // MARK: - Background Scanning
@@ -317,10 +330,13 @@ class SlideShowViewModel: ObservableObject {
     // MARK: - Private Methods
     
     private func startSlideTimer() {
+        // Cancel any existing timer task
+        currentTimerTask?.cancel()
+        
         // Start modern async slide timing
-        Task { @MainActor in
+        currentTimerTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(displayDuration))
-            if isActive {
+            if isActive && !Task.isCancelled {
                 nextPhoto()
             }
         }
@@ -344,7 +360,7 @@ class SlideShowViewModel: ObservableObject {
             }
         }
         
-        print("📸 Found \(originalFiles.count) original files and \(themedFiles.count) themed files")
+        logDebug("\(LoggingService.Emoji.slideshow) Found \(originalFiles.count) original files and \(themedFiles.count) themed files", category: .slideshow)
         
         // Match original and themed files by exact timestamp
         for original in originalFiles {
@@ -356,19 +372,19 @@ class SlideShowViewModel: ObservableObject {
             if let themed = matchingThemed {
                 // Convert timestamp string to TimeInterval for PhotoPair
                 guard let timestampDouble = Double(original.timestamp) else {
-                    print("⚠️ Invalid timestamp format: \(original.timestamp)")
+                    logWarning("\(LoggingService.Emoji.warning) Invalid timestamp format: \(original.timestamp)", category: .slideshow)
                     continue
                 }
                 let date = Date(timeIntervalSince1970: timestampDouble)
                 
                 if let photoPair = PhotoPair(originalURL: original.url, themedURL: themed.url, timestamp: date) {
                     pairs.append(photoPair)
-                    print("✅ Paired: \(original.url.lastPathComponent) + \(themed.url.lastPathComponent)")
+                    logDebug("\(LoggingService.Emoji.success) Paired: \(original.url.lastPathComponent) + \(themed.url.lastPathComponent)", category: .slideshow)
                 } else {
-                    print("⚠️ Failed to create PhotoPair for \(original.url.lastPathComponent)")
+                    logWarning("\(LoggingService.Emoji.warning) Failed to create PhotoPair for \(original.url.lastPathComponent)", category: .slideshow)
                 }
             } else {
-                print("⚠️ No matching themed file found for \(original.url.lastPathComponent)")
+                logWarning("\(LoggingService.Emoji.warning) No matching themed file found for \(original.url.lastPathComponent)", category: .slideshow)
             }
         }
         

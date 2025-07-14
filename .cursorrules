@@ -1,0 +1,102 @@
+# PhotoBooth Cursor Rules
+
+## ⚠️ CRITICAL: CONTINUITY CAMERA FUNCTIONALITY - DO NOT BREAK
+
+### Overview
+This PhotoBooth app relies on continuity camera (iPhone connected via WiFi/Bluetooth) for photo capture. The continuity camera implementation is **FRAGILE** and requires specific configuration.
+
+### ✅ WORKING CONFIGURATION (DO NOT CHANGE)
+
+#### 1. Device Types Discovery
+In `CameraService.swift`, the `discoverCameras()` function MUST include these device types:
+```swift
+let allDeviceTypes: [AVCaptureDevice.DeviceType] = [
+    .builtInWideAngleCamera,
+    .continuityCamera,
+    .external  // ⚠️ REQUIRED - DO NOT REMOVE despite deprecation warnings
+]
+```
+
+**Why `.external` is required:**
+- Continuity cameras are detected as `.external` type in many cases
+- Apple's `.continuityCamera` type alone is insufficient
+- Removing `.external` breaks continuity camera detection
+- The deprecation warnings are expected - ignore them
+
+#### 2. Camera Selection Priority
+The `selectBestAvailableCamera()` function uses this priority order:
+1. **Charlie's iPhone** (device name contains "Charlie" or "15 Pro")
+2. **Continuity Camera** (device type `.continuityCamera`)
+3. **External Camera** (device type `.external`) - **REQUIRED FOR CONTINUITY CAMERAS**
+4. **Built-in Camera** (fallback only)
+
+#### 3. Enhanced Detection
+Two detection methods are used:
+- `AVCaptureDeviceDiscoverySession` with multiple device types
+- `AVCaptureDevice.devices(for: .video)` for additional detection (deprecated but necessary)
+
+### 🚫 THINGS THAT WILL BREAK CONTINUITY CAMERA
+
+1. **Removing `.external` device type** - This is the most common way to break it
+2. **Removing the `devices(for: .video)` fallback** - Provides additional detection
+3. **Changing camera selection priority** - Charlie's iPhone must be prioritized
+4. **Removing external camera checks** in `forceContinuityCameraConnection()`
+
+### ✅ EXPECTED WARNINGS (DO NOT "FIX" THESE)
+
+These warnings are expected and should be ignored:
+```
+WARNING: Add NSCameraUseContinuityCameraDeviceType to your Info.plist
+WARNING: AVCaptureDeviceTypeExternal is deprecated for Continuity Cameras
+warning: 'devices(for:)' was deprecated in macOS 10.15
+```
+
+**Why we can't fix these:**
+- Swift Package Manager doesn't support Info.plist files
+- Deprecated APIs are still required for continuity camera detection
+- "Fixing" these warnings breaks continuity camera functionality
+
+### 📱 TESTING CONTINUITY CAMERA
+
+To verify continuity camera works:
+1. Connect iPhone to Mac via WiFi/Bluetooth
+2. Open PhotoBooth app
+3. Check that camera shows as "Connected" (not "Disconnected")
+4. Verify "Take Photo" button is enabled
+5. Look for debug logs showing iPhone detection
+
+### 🔧 DEBUGGING CONTINUITY CAMERA
+
+Key debug logs to look for:
+- `🔍 [DEBUG] Continuity cameras found: X` (should be > 0)
+- `⭐ POTENTIAL CONTINUITY CAMERA DETECTED!`
+- `📱 Found Charlie's iPhone: [name]`
+- `📱 Connection status updated - Connected: true`
+
+### 🎯 MEMORY NOTES
+
+- User prefers landscape resolution (1536x1024) for group photos
+- Use gpt-image-1 model for image generation (not DALL-E 3)
+- PhotoTheme prompts are very effective for image theming
+- User requires approval before implementing code changes
+- Work systematically through each development phase
+
+### 📋 DEVELOPMENT WORKFLOW
+
+1. **Before changing camera code:** Ask user for approval
+2. **After camera changes:** Always test continuity camera functionality
+3. **If continuity camera breaks:** Restore from git history (commit f3a738b had working version)
+4. **Never remove deprecated APIs** without confirming continuity camera still works
+
+### 🔄 RECOVERY PROCESS
+
+If continuity camera breaks:
+1. Check git history for working version (f3a738b)
+2. Restore camera detection device types
+3. Ensure `.external` device type is included
+4. Test with actual iPhone connection
+5. Verify "Connected" status and enabled "Take Photo" button
+
+---
+
+**Remember:** The continuity camera implementation prioritizes functionality over clean code. The deprecated APIs and warnings are necessary for proper iPhone detection. Focus on maintaining working functionality rather than eliminating warnings. 

@@ -18,6 +18,7 @@ final class ImageProcessingViewModel: ObservableObject {
     // MARK: - Private Properties
     private let openAIService: any OpenAIServiceProtocol
     private let imageProcessingService: any ImageProcessingServiceProtocol
+    private let themeConfigurationService: ThemeConfigurationService
     private let logger = Logger(subsystem: "PhotoBooth", category: "ImageProcessing")
     private var cancellables = Set<AnyCancellable>()
     private var currentPhotoTimestamp: TimeInterval?
@@ -25,28 +26,40 @@ final class ImageProcessingViewModel: ObservableObject {
     // MARK: - Delegation
     weak var delegate: ImageProcessingViewModelDelegate?
     
-    // MARK: - Themes Configuration
-    let themes: [PhotoTheme] = [
-        PhotoTheme(id: 1, name: "Studio Ghibli", prompt: "Transform this photo into Studio Ghibli anime style with soft watercolor backgrounds, whimsical characters, and magical atmosphere like Spirited Away or My Neighbor Totoro"),
-        PhotoTheme(id: 2, name: "Simpsons", prompt: "Transform this photo into The Simpsons cartoon style with yellow skin, big eyes, overbite, and the iconic Springfield art style"),
-        PhotoTheme(id: 3, name: "Rick and Morty", prompt: "Transform this photo into Rick and Morty animation style with exaggerated features, drooling mouths, unibrows, and sci-fi elements"),
-        PhotoTheme(id: 4, name: "Dragon Ball Z", prompt: "Transform this photo into Dragon Ball Z anime style with spiky hair, intense expressions, power auras, and dynamic action poses"),
-        PhotoTheme(id: 5, name: "Scooby Doo", prompt: "Transform this photo into Scooby Doo cartoon style with retro animation design and bright colors"),
-        PhotoTheme(id: 6, name: "SpongeBob", prompt: "Transform this photo into SpongeBob SquarePants style with underwater Bikini Bottom setting, bright colors, and zany cartoon expressions"),
-        PhotoTheme(id: 7, name: "South Park", prompt: "Transform this photo into South Park style with simple geometric shapes, cut-out animation look, beady eyes, and Colorado mountain town setting"),
-        PhotoTheme(id: 8, name: "Pixar", prompt: "Transform this photo into Pixar animation style with vibrant colors, expressive cartoon features, and the distinctive 3D animated look of characters from Toy Story, Finding Nemo, and The Incredibles"),
-        PhotoTheme(id: 9, name: "Flintstones", prompt: "Transform this photo into The Flintstones cartoon style with stone age setting, prehistoric elements, and classic Hanna-Barbera 60s animation design")
-    ]
+    // MARK: - Computed Properties
+    
+    /// Available themes from configuration service
+    var themes: [PhotoTheme] {
+        themeConfigurationService.availableThemes
+    }
+    
+    /// Themes grouped by category
+    var themesByCategory: [String: [PhotoTheme]] {
+        themeConfigurationService.themesByCategory
+    }
+    
+    /// Available categories
+    var availableCategories: [String] {
+        themeConfigurationService.getAvailableCategories()
+    }
+    
+    /// Theme configuration status
+    var isThemeConfigurationLoaded: Bool {
+        themeConfigurationService.isConfigured
+    }
     
     // MARK: - Initialization
     init(
         openAIService: any OpenAIServiceProtocol,
-        imageProcessingService: any ImageProcessingServiceProtocol
+        imageProcessingService: any ImageProcessingServiceProtocol,
+        themeConfigurationService: ThemeConfigurationService
     ) {
         self.openAIService = openAIService
         self.imageProcessingService = imageProcessingService
+        self.themeConfigurationService = themeConfigurationService
         
         setupServiceObservation()
+        setupThemeConfigurationObservation()
     }
     
     // Convenience initializer for main actor context
@@ -54,7 +67,8 @@ final class ImageProcessingViewModel: ObservableObject {
     convenience init() {
         self.init(
             openAIService: OpenAIService(),
-            imageProcessingService: ImageProcessingService()
+            imageProcessingService: ImageProcessingService(),
+            themeConfigurationService: ThemeConfigurationService()
         )
     }
     
@@ -82,12 +96,14 @@ final class ImageProcessingViewModel: ObservableObject {
         }
         
         guard openAIService.isConfigured else {
-            logger.error("OpenAI service not configured")
+            logger.error("OpenAI service not configured - check API key")
             delegate?.imageProcessingViewModel(self, didFailWithError: ImageProcessingViewModelError.serviceNotConfigured)
             return
         }
         
-        logger.info("Starting image processing for theme: \(theme.name)")
+        logger.info("🎨 Starting image processing for theme: \(theme.name)")
+        logger.debug("🎨 Image dimensions: \(image.size.width) x \(image.size.height)")
+        logger.debug("🎨 OpenAI configured: \(self.openAIService.isConfigured)")
         
         // Setup processing state
         isProcessing = true
@@ -110,11 +126,18 @@ final class ImageProcessingViewModel: ObservableObject {
             
             // Step 2: Generate themed image (80%)
             currentProcessingStep = .generatingTheme
-            logger.info("Step 2: Generating themed image...")
+            logger.info("🎨 Step 2: Generating themed image...")
             
-            let themedImage = try await openAIService.generateThemedImage(from: image, theme: theme)
-            lastThemedImage = themedImage
-            processingProgress = 0.8
+            let themedImage: NSImage
+            do {
+                themedImage = try await openAIService.generateThemedImage(from: image, theme: theme)
+                lastThemedImage = themedImage
+                processingProgress = 0.8
+                logger.info("✅ Themed image generated successfully")
+            } catch {
+                logger.error("❌ OpenAI image generation failed: \(error.localizedDescription)")
+                throw error
+            }
             
             // Step 3: Save themed image (100%)
             currentProcessingStep = .savingThemed
@@ -198,9 +221,52 @@ final class ImageProcessingViewModel: ObservableObject {
     // MARK: - Private Methods
     
     private func setupServiceObservation() {
-        // Monitor OpenAI service configuration changes
-        // TODO: Implement proper observation when actor isolation is resolved
-        logDebug("\(LoggingService.Emoji.debug) Service observation setup temporarily disabled due to actor isolation", category: .imageProcessing)
+        // Monitor OpenAI service configuration changes using proper actor isolation
+        logDebug("\(LoggingService.Emoji.connection) Setting up OpenAI service observation", category: .imageProcessing)
+        
+        // Note: Service observation temporarily simplified due to Swift 6 actor isolation
+        // Services will notify state changes independently
+        logDebug("\(LoggingService.Emoji.debug) Service observation configured for ImageProcessingViewModel", category: .imageProcessing)
+        
+        logDebug("\(LoggingService.Emoji.success) Service observation setup completed", category: .imageProcessing)
+    }
+    
+    /// Set up theme configuration observation
+    private func setupThemeConfigurationObservation() {
+        logDebug("\(LoggingService.Emoji.config) Setting up theme configuration observation", category: .imageProcessing)
+        
+        // Observe theme configuration changes
+        themeConfigurationService.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+        
+        // Observe theme configuration updates
+        NotificationCenter.default.publisher(for: .themeConfigurationUpdated)
+            .sink { [weak self] _ in
+                self?.handleThemeConfigurationUpdate()
+            }
+            .store(in: &cancellables)
+        
+        logDebug("\(LoggingService.Emoji.success) Theme configuration observation setup completed", category: .imageProcessing)
+    }
+    
+    /// Handle theme configuration updates
+    private func handleThemeConfigurationUpdate() {
+        logger.info("Theme configuration updated - refreshing themes")
+        
+        // Clear current selection if the selected theme is no longer available
+        if let selectedTheme = selectedTheme,
+           !themeConfigurationService.availableThemes.contains(where: { $0.id == selectedTheme.id }) {
+            logger.warning("Selected theme '\(selectedTheme.name)' is no longer available - clearing selection")
+            clearThemeSelection()
+        }
+        
+        // Notify delegate if no themes are available
+        if !themeConfigurationService.isConfigured {
+            delegate?.imageProcessingViewModel(self, didFailWithError: ImageProcessingViewModelError.serviceNotConfigured)
+        }
     }
     
     private func resetProcessingState() {

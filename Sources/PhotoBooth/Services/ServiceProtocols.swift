@@ -52,6 +52,7 @@ protocol CameraServiceProtocol: ObservableObject {
     func startSession() async
     func stopSession()
     func getPreviewLayer() -> AVCaptureVideoPreviewLayer?
+    func forceContinuityCameraConnection() async
 }
 
 // MARK: - Image Processing Service Protocol
@@ -99,6 +100,10 @@ extension CameraServiceProtocol {
     func refreshCameras() async {
         await discoverCameras()
     }
+    
+    func forceContinuityCameraConnection() async {
+        await discoverCameras()
+    }
 }
 
 /// Default implementations for image processing service
@@ -124,13 +129,4 @@ protocol RetryableService {
     var retryDelay: TimeInterval { get }
 }
 
-// MARK: - Logging Protocol
-
-/// Protocol for services with structured logging (deprecated - use LoggingService struct)
-protocol LoggingServiceProtocol {
-    var logCategory: String { get }
-    func logInfo(_ message: String)
-    func logWarning(_ message: String)
-    func logError(_ message: String)
-    func logDebug(_ message: String)
-} 
+ 

@@ -44,7 +44,7 @@ class SlideShowWindowController: NSWindowController {
         // Determine optimal display with fallback - prefer secondary display
         let targetScreen = getOptimalDisplayWithFallback()
         
-        print("📺 Slideshow will launch on: \(targetScreen.localizedName)")
+        logInfo("\(LoggingService.Emoji.slideshow) Slideshow will launch on: \(targetScreen.localizedName)", category: .slideshow)
         
         // Add delay to ensure projector window has fully hidden/exited fullscreen if it was visible
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
@@ -52,7 +52,7 @@ class SlideShowWindowController: NSWindowController {
             
             // Ensure window is positioned correctly and stays on target screen  
             window.setFrame(window.frame, display: true)
-            print("📺 Slideshow positioned on: \(targetScreen.localizedName)")
+            logDebug("\(LoggingService.Emoji.slideshow) Slideshow positioned on: \(targetScreen.localizedName)", category: .slideshow)
         }
         
         // Log initial display configuration
@@ -67,14 +67,14 @@ class SlideShowWindowController: NSWindowController {
         
         // Start the slideshow
         Task {
-            print("🎬 About to start slideshow in window controller")
+            logDebug("\(LoggingService.Emoji.slideshow) About to start slideshow in window controller", category: .slideshow)
             await viewModel.startSlideshow()
-            print("🎬 Slideshow start completed in window controller")
+            logDebug("\(LoggingService.Emoji.slideshow) Slideshow start completed in window controller", category: .slideshow)
         }
         
-        print("🎬 Slideshow window launched on \(targetScreen.localizedName)")
-        print("🎬 Window is visible: \(window.isVisible)")
-        print("🎬 Window frame: \(window.frame)")
+        logInfo("\(LoggingService.Emoji.slideshow) Slideshow window launched on \(targetScreen.localizedName)", category: .slideshow)
+        logDebug("\(LoggingService.Emoji.slideshow) Window is visible: \(window.isVisible)", category: .slideshow)
+        logDebug("\(LoggingService.Emoji.slideshow) Window frame: \(window.frame)", category: .slideshow)
     }
     
     /// Close the slideshow window
@@ -86,7 +86,7 @@ class SlideShowWindowController: NSWindowController {
             window.close()
         }
         
-        print("🛑 Slideshow window closed")
+        logInfo("\(LoggingService.Emoji.slideshow) Slideshow window closed", category: .slideshow)
     }
     
     // MARK: - Private Methods
@@ -118,12 +118,12 @@ class SlideShowWindowController: NSWindowController {
         if screens.count > 1 {
             // Always use the second screen (index 1) for slideshow
             let secondaryScreen = screens[1]
-            print("📺 [SLIDESHOW] Forcing slideshow to secondary display: \(secondaryScreen.localizedName)")
+            logInfo("\(LoggingService.Emoji.slideshow) Forcing slideshow to secondary display: \(secondaryScreen.localizedName)", category: .slideshow)
             return secondaryScreen
         }
         
         // Only fallback to main screen if no secondary display exists
-        print("📺 [SLIDESHOW] No secondary display available, using main screen")
+        logInfo("\(LoggingService.Emoji.slideshow) No secondary display available, using main screen", category: .slideshow)
         return NSScreen.main ?? screens.first!
     }
     
@@ -141,7 +141,7 @@ class SlideShowWindowController: NSWindowController {
         
         window.setFrame(windowFrame, display: true)
         
-        print("📺 Positioned slideshow window on screen: \(screen.localizedName) (\(Int(windowFrame.width))x\(Int(windowFrame.height))) at (\(Int(windowFrame.origin.x)), \(Int(windowFrame.origin.y)))")
+        logDebug("\(LoggingService.Emoji.slideshow) Positioned slideshow window on screen: \(screen.localizedName) (\(Int(windowFrame.width))x\(Int(windowFrame.height))) at (\(Int(windowFrame.origin.x)), \(Int(windowFrame.origin.y)))", category: .slideshow)
     }
     
     deinit {
@@ -152,7 +152,7 @@ class SlideShowWindowController: NSWindowController {
 // MARK: - NSWindowDelegate
 extension SlideShowWindowController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
-        print("📺 windowWillClose called - slideshow was active: \(slideShowViewModel?.isActive ?? false)")
+        logDebug("\(LoggingService.Emoji.slideshow) windowWillClose called - slideshow was active: \(slideShowViewModel?.isActive ?? false)", category: .slideshow)
         
         // Stop slideshow and notify main app
         slideShowViewModel?.stopSlideshow()
@@ -166,49 +166,49 @@ extension SlideShowWindowController: NSWindowDelegate {
         
         slideShowViewModel = nil
         hostingController = nil
-        print("📺 Slideshow window closed by user")
+        logInfo("\(LoggingService.Emoji.slideshow) Slideshow window closed by user", category: .slideshow)
     }
     
     func windowDidEnterFullScreen(_ notification: Notification) {
-        print("📺 Slideshow entered fullscreen mode successfully")
-        print("📺 Slideshow ViewModel active: \(slideShowViewModel?.isActive ?? false)")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow entered fullscreen mode successfully", category: .slideshow)
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow ViewModel active: \(slideShowViewModel?.isActive ?? false)", category: .slideshow)
     }
     
     func windowDidExitFullScreen(_ notification: Notification) {
-        print("📺 Slideshow exited fullscreen mode")
-        print("📺 Slideshow ViewModel active: \(slideShowViewModel?.isActive ?? false)")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow exited fullscreen mode", category: .slideshow)
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow ViewModel active: \(slideShowViewModel?.isActive ?? false)", category: .slideshow)
         // Don't auto-close when exiting fullscreen anymore
     }
     
     func windowWillEnterFullScreen(_ notification: Notification) {
-        print("📺 Slideshow WILL enter fullscreen mode")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow WILL enter fullscreen mode", category: .slideshow)
     }
     
     func windowWillExitFullScreen(_ notification: Notification) {
-        print("📺 Slideshow WILL exit fullscreen mode") 
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow WILL exit fullscreen mode", category: .slideshow) 
     }
     
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        print("📺 windowShouldClose called")
+        logDebug("\(LoggingService.Emoji.slideshow) windowShouldClose called", category: .slideshow)
         // Always allow closing
         return true
     }
     
     func windowDidBecomeMain(_ notification: Notification) {
-        print("📺 Slideshow window became main")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow window became main", category: .slideshow)
     }
     
     func windowDidResignMain(_ notification: Notification) {
-        print("📺 Slideshow window resigned main")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow window resigned main", category: .slideshow)
     }
     
     func windowWillMiniaturize(_ notification: Notification) {
-        print("📺 Slideshow window will miniaturize")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow window will miniaturize", category: .slideshow)
     }
     
     // Handle ESC key and other shortcuts
     func windowDidBecomeKey(_ notification: Notification) {
-        print("📺 Slideshow window became key")
+        logDebug("\(LoggingService.Emoji.slideshow) Slideshow window became key", category: .slideshow)
         // Ensure window can receive key events
         window?.makeFirstResponder(hostingController?.view)
     }
@@ -222,11 +222,11 @@ extension SlideShowWindowController {
         guard let window = window,
               window.isVisible else { return }
         
-        print("📺 Display configuration changed, adapting slideshow...")
+        logDebug("\(LoggingService.Emoji.slideshow) Display configuration changed, adapting slideshow...", category: .slideshow)
         
         // If window is in fullscreen mode, don't move it around
         if window.styleMask.contains(.fullScreen) {
-            print("📺 Window is in fullscreen - ignoring display change to prevent repositioning")
+            logDebug("\(LoggingService.Emoji.slideshow) Window is in fullscreen - ignoring display change to prevent repositioning", category: .slideshow)
             return
         }
         
@@ -236,11 +236,11 @@ extension SlideShowWindowController {
         
         // Check if we need to move to a different display
         if currentScreen != newOptimalScreen {
-            print("📺 Moving slideshow from \(currentScreen?.localizedName ?? "Unknown") to \(newOptimalScreen.localizedName)")
+            logInfo("\(LoggingService.Emoji.slideshow) Moving slideshow from \(currentScreen?.localizedName ?? "Unknown") to \(newOptimalScreen.localizedName)", category: .slideshow)
             positionWindowOnScreen(newOptimalScreen)
         } else {
             // Same display, just update position if needed (but only if not fullscreen)
-            print("📺 Adjusting position on current display")
+            logDebug("\(LoggingService.Emoji.slideshow) Adjusting position on current display", category: .slideshow)
             positionWindowOnScreen(newOptimalScreen)
         }
         
@@ -256,7 +256,7 @@ extension SlideShowWindowController {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
-        print("📺 Started monitoring display configuration changes")
+        logDebug("\(LoggingService.Emoji.slideshow) Started monitoring display configuration changes", category: .slideshow)
     }
     
     /// Stop monitoring display changes
@@ -292,19 +292,19 @@ extension SlideShowWindowController {
     /// Log current display status for debugging
     private func logDisplayStatus() {
         let screens = NSScreen.screens
-        print("📺 Current display configuration:")
-        print("   Total screens: \(screens.count)")
+        logDebug("\(LoggingService.Emoji.slideshow) Current display configuration:", category: .slideshow)
+        logDebug("\(LoggingService.Emoji.slideshow) Total screens: \(screens.count)", category: .slideshow)
         
         for (index, screen) in screens.enumerated() {
             let isMain = screen == NSScreen.main
             let frame = screen.frame
-            print("   \(index + 1). \(screen.localizedName) \(isMain ? "(Main)" : "")")
-            print("      Frame: \(Int(frame.width))x\(Int(frame.height)) at (\(Int(frame.origin.x)), \(Int(frame.origin.y)))")
+            logDebug("\(LoggingService.Emoji.slideshow) \(index + 1). \(screen.localizedName) \(isMain ? "(Main)" : "")", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.slideshow) Frame: \(Int(frame.width))x\(Int(frame.height)) at (\(Int(frame.origin.x)), \(Int(frame.origin.y)))", category: .slideshow)
         }
         
         if let window = window, window.isVisible {
             let currentScreen = window.screen
-            print("   Slideshow currently on: \(currentScreen?.localizedName ?? "Unknown")")
+            logDebug("\(LoggingService.Emoji.slideshow) Slideshow currently on: \(currentScreen?.localizedName ?? "Unknown")", category: .slideshow)
         }
     }
     
@@ -317,7 +317,7 @@ extension SlideShowWindowController {
         if screens.contains(optimalScreen) {
             return optimalScreen
         } else {
-            print("⚠️ Previously selected display no longer available, falling back to main display")
+            logWarning("\(LoggingService.Emoji.warning) Previously selected display no longer available, falling back to main display", category: .slideshow)
             return NSScreen.main ?? screens.first!
         }
     }

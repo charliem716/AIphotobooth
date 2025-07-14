@@ -36,6 +36,8 @@ struct ProjectorView: View {
     @State private var warningCountdown = 3
     @State private var selectedThemeName: String = ""
     @State private var errorMessage: String = ""
+    @State private var elapsedTime: Int = 0
+    @State private var processingTask: Task<Void, Error>?
     @AppStorage("warningDuration") private var warningDuration = 3.0
     
     private let photoPublisher = NotificationCenter.default
@@ -183,8 +185,8 @@ struct ProjectorView: View {
                                 .foregroundColor(.white.opacity(0.8))
                         }
                         
-                        if let startTime = processingStartTime {
-                            Text("Time elapsed: \(Int(Date().timeIntervalSince(startTime)))s")
+                        if processingStartTime != nil {
+                            Text("Time elapsed: \(elapsedTime)s")
                                 .font(.caption)
                                 .foregroundColor(.white.opacity(0.6))
                         }
@@ -296,6 +298,7 @@ struct ProjectorView: View {
                 projectorState = .showingOriginal
             }
             processingStartTime = Date()
+            startProcessingTimer()
         }
     }
     
@@ -306,9 +309,11 @@ struct ProjectorView: View {
         selectedThemeName = themeName
         processingStartTime = Date()
         projectorState = .showingOriginal
+        startProcessingTimer()
     }
     
     private func handleProcessingDone(_ notification: Notification) {
+        stopProcessingTimer()
         withAnimation(.easeInOut(duration: 0.3)) {
             projectorState = .processingComplete
         }
@@ -333,14 +338,20 @@ struct ProjectorView: View {
         showWarning = true
         warningCountdown = Int(warningDuration)
         
-        // Start countdown timer
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-            warningCountdown -= 1
-            
-            if warningCountdown <= 0 {
-                timer.invalidate()
-                showWarning = false
-                showThemedImage()
+        // Start modern async countdown
+        Task { @MainActor in
+            while warningCountdown > 0 {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                
+                guard !Task.isCancelled else { return }
+                
+                warningCountdown -= 1
+                
+                if warningCountdown <= 0 {
+                    showWarning = false
+                    showThemedImage()
+                    break
+                }
             }
         }
     }
@@ -355,29 +366,13 @@ struct ProjectorView: View {
                 projectorState = .minimumDisplay
             }
             
-            // Start minimum display timer
-            viewModel.isInMinimumDisplayPeriod = true
-            viewModel.isReadyForNextPhoto = false
-            viewModel.minimumDisplayTimeRemaining = Int(viewModel.minimumDisplayDuration)
-            
-            // Start countdown timer
-            viewModel.minimumDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-                DispatchQueue.main.async {
-                    viewModel.minimumDisplayTimeRemaining -= 1
-                    
-                    if viewModel.minimumDisplayTimeRemaining <= 0 {
-                        timer.invalidate()
-                        viewModel.isInMinimumDisplayPeriod = false
-                        viewModel.isReadyForNextPhoto = true
-                        
-                        // Don't automatically return to live camera - wait for theme selection
-                    }
-                }
-            }
+            // Start minimum display period using proper method
+            viewModel.startMinimumDisplayPeriod()
         }
     }
     
     private func resetToLiveCamera() {
+        stopProcessingTimer()
         projectorState = .liveCamera
         originalImage = nil
         themedImage = nil
@@ -385,14 +380,15 @@ struct ProjectorView: View {
         processingStartTime = nil
         selectedThemeName = ""
         errorMessage = ""
+        elapsedTime = 0
     }
     
     private func handleCountdownStart() {
-        print("🎬 [PROJECTOR] Handling countdown start - switching to countdown state")
+        logInfo("\(LoggingService.Emoji.projector) Handling countdown start - switching to countdown state", category: .projector)
         
         // If we're currently showing a themed image, smoothly transition back to live camera first
         if projectorState == .showingThemed || projectorState == .minimumDisplay {
-            print("🎬 [PROJECTOR] Transitioning from themed image to live camera countdown")
+            logDebug("\(LoggingService.Emoji.projector) Transitioning from themed image to live camera countdown", category: .projector)
             withAnimation(.easeInOut(duration: 0.2)) {
                 projectorState = .liveCamera
             }
@@ -402,14 +398,14 @@ struct ProjectorView: View {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     self.projectorState = .countdown
                 }
-                print("🎬 [PROJECTOR] Projector state changed to: \(self.projectorState)")
+                logDebug("\(LoggingService.Emoji.projector) Projector state changed to: \(self.projectorState)", category: .projector)
             }
         } else {
             // Direct transition to countdown if not coming from themed image
             withAnimation(.easeInOut(duration: 0.3)) {
                 projectorState = .countdown
             }
-            print("🎬 [PROJECTOR] Projector state changed to: \(projectorState)")
+            logDebug("\(LoggingService.Emoji.projector) Projector state changed to: \(projectorState)", category: .projector)
         }
     }
     
@@ -430,6 +426,28 @@ struct ProjectorView: View {
         withAnimation(.easeInOut(duration: 0.5)) {
             projectorState = .liveCamera
         }
+    }
+    
+    // MARK: - Processing Timer Functions
+    
+    private func startProcessingTimer() {
+        stopProcessingTimer() // Stop any existing task
+        elapsedTime = 0
+        
+        processingTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                
+                guard !Task.isCancelled else { return }
+                
+                elapsedTime += 1
+            }
+        }
+    }
+    
+    private func stopProcessingTimer() {
+        processingTask?.cancel()
+        processingTask = nil
     }
 }
 
@@ -453,7 +471,7 @@ class ProjectorWindowManager: ObservableObject {
         
         // If projector window exists but was created without viewModel, recreate it
         if isProjectorWindowVisible && projectorWindow?.contentView != nil {
-            print("🔄 [PROJECTOR] Recreating projector window with proper viewModel")
+            logInfo("\(LoggingService.Emoji.projector) Recreating projector window with proper viewModel", category: .projector)
             closeProjectorWindow()
             showProjectorWindow()
         }
@@ -470,7 +488,7 @@ class ProjectorWindowManager: ObservableObject {
     }
     
     private func setupSlideshowNotifications() {
-        print("🎬 Setting up slideshow notifications in ProjectorWindowManager")
+        logDebug("\(LoggingService.Emoji.projector) Setting up slideshow notifications in ProjectorWindowManager", category: .projector)
         // Listen for slideshow start/stop notifications
         NotificationCenter.default.addObserver(
             self,
@@ -485,51 +503,51 @@ class ProjectorWindowManager: ObservableObject {
             name: .restoreProjectorAfterSlideshow,
             object: nil
         )
-        print("🎬 Slideshow notification observers set up")
+        logDebug("\(LoggingService.Emoji.projector) Slideshow notification observers set up", category: .projector)
     }
     
     @objc private func displayConfigurationChanged() {
-        print("🔍 Display configuration changed")
+        logDebug("\(LoggingService.Emoji.display) Display configuration changed", category: .projector)
         updateAvailableDisplays()
         
         // If projector window is visible but no longer has a valid screen, hide it
         if isProjectorWindowVisible && NSScreen.screens.count <= 1 {
-            print("⚠️ External display disconnected, hiding projector window")
+            logWarning("\(LoggingService.Emoji.warning) External display disconnected, hiding projector window", category: .projector)
             hideProjectorWindow()
         }
         // Only auto-show projector if slideshow is NOT active
         else if !isProjectorWindowVisible && NSScreen.screens.count > 1 && !isSlideshowActive {
-            print("✅ External display connected and slideshow not active, showing projector window")
+            logInfo("\(LoggingService.Emoji.success) External display connected and slideshow not active, showing projector window", category: .projector)
             showProjectorWindow()
         } else if !isProjectorWindowVisible && NSScreen.screens.count > 1 && isSlideshowActive {
-            print("🎬 Display change detected but slideshow is active - NOT showing projector")
+            logInfo("\(LoggingService.Emoji.projector) Display change detected but slideshow is active - NOT showing projector", category: .projector)
         }
     }
     
     private func updateAvailableDisplays() {
         availableDisplays = NSScreen.screens
-        print("🔍 Available displays: \(availableDisplays.count)")
+        logDebug("\(LoggingService.Emoji.display) Available displays: \(availableDisplays.count)", category: .projector)
         for (index, screen) in availableDisplays.enumerated() {
-            print("   Display \(index): \(screen.localizedName) - \(screen.frame)")
+            logDebug("\(LoggingService.Emoji.display) Display \(index): \(screen.localizedName) - \(screen.frame)", category: .projector)
         }
     }
     
     @objc private func handleHideProjectorForSlideshow() {
-        print("🎬 handleHideProjectorForSlideshow() called!")
-        print("🎬 Current projector window state - isVisible: \(isProjectorWindowVisible)")
+        logInfo("\(LoggingService.Emoji.projector) handleHideProjectorForSlideshow() called!", category: .projector)
+        logDebug("\(LoggingService.Emoji.projector) Current projector window state - isVisible: \(isProjectorWindowVisible)", category: .projector)
         wasVisibleBeforeSlideshow = isProjectorWindowVisible
         isSlideshowActive = true
         if isProjectorWindowVisible {
-            print("🎬 Actually hiding projector window now...")
+            logInfo("\(LoggingService.Emoji.projector) Actually hiding projector window now...", category: .projector)
             hideProjectorWindow()
-            print("🎬 Projector window hidden - new state: \(isProjectorWindowVisible)")
+            logDebug("\(LoggingService.Emoji.projector) Projector window hidden - new state: \(isProjectorWindowVisible)", category: .projector)
         } else {
-            print("🎬 Projector window was already hidden")
+            logDebug("\(LoggingService.Emoji.projector) Projector window was already hidden", category: .projector)
         }
     }
     
     @objc private func handleRestoreProjectorAfterSlideshow() {
-        print("🎬 Restoring projector window after slideshow")
+        logInfo("\(LoggingService.Emoji.projector) Restoring projector window after slideshow", category: .projector)
         isSlideshowActive = false
         if wasVisibleBeforeSlideshow {
             showProjectorWindow()
@@ -544,16 +562,16 @@ class ProjectorWindowManager: ObservableObject {
     func showProjectorWindow() {
         // Check if slideshow is active and prevent showing projector
         if isSlideshowActive {
-            print("🚫 [PROJECTOR] Blocked projector window show - slideshow is active")
+            logInfo("\(LoggingService.Emoji.projector) Blocked projector window show - slideshow is active", category: .projector)
             return
         }
         
         // Find external display - always use second screen if available
         let screens = NSScreen.screens
         
-        print("🔍 DEBUG: Total screens detected: \(screens.count)")
+        logDebug("\(LoggingService.Emoji.display) Total screens detected: \(screens.count)", category: .projector)
         for (index, screen) in screens.enumerated() {
-            print("🔍 DEBUG: Screen \(index): \(screen.localizedName) - Frame: \(screen.frame)")
+            logDebug("\(LoggingService.Emoji.display) Screen \(index): \(screen.localizedName) - Frame: \(screen.frame)", category: .projector)
         }
         
         // Check for single display mode setting
@@ -564,20 +582,20 @@ class ProjectorWindowManager: ObservableObject {
         if singleDisplayMode || screens.count <= 1 {
             // Use main screen for single display mode or when only one screen is available
             screen = screens[0]
-            print("📺 Using main screen for projector (single display mode)")
+            logInfo("\(LoggingService.Emoji.projector) Using main screen for projector (single display mode)", category: .projector)
         } else {
             // Use second screen for dual display mode
             screen = screens[1]
-            print("📺 Using second screen for projector (dual display mode)")
+            logInfo("\(LoggingService.Emoji.projector) Using second screen for projector (dual display mode)", category: .projector)
         }
         
         if screens.count > 1 {
-            print("📺 Main screen (laptop): \(screens[0].localizedName)")
-            print("📺 Projector screen: \(screen.localizedName)")
+            logDebug("\(LoggingService.Emoji.projector) Main screen (laptop): \(screens[0].localizedName)", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Projector screen: \(screen.localizedName)", category: .projector)
         } else {
-            print("📺 Single display mode: \(screen.localizedName)")
+            logDebug("\(LoggingService.Emoji.projector) Single display mode: \(screen.localizedName)", category: .projector)
         }
-        print("📺 Creating projector window on screen: \(screen.frame)")
+        logDebug("\(LoggingService.Emoji.projector) Creating projector window on screen: \(screen.frame)", category: .projector)
         
         // Create window if needed
         if projectorWindow == nil {
@@ -626,21 +644,21 @@ class ProjectorWindowManager: ObservableObject {
             
             // Ensure viewModel is available - if not, wait for it
             guard let viewModel = viewModel else {
-                print("⚠️ [PROJECTOR] ViewModel not available yet, deferring window creation")
+                logWarning("\(LoggingService.Emoji.warning) ViewModel not available yet, deferring window creation", category: .projector)
                 return
             }
             
             window.contentView = NSHostingView(rootView: projectorView.environmentObject(viewModel))
             
             projectorWindow = window
-            print("✅ Projector window created successfully")
+            logInfo("\(LoggingService.Emoji.success) Projector window created successfully", category: .projector)
         }
         
-        print("📺 Showing projector window...")
+        logInfo("\(LoggingService.Emoji.projector) Showing projector window...", category: .projector)
         projectorWindow?.makeKeyAndOrderFront(nil)
         projectorWindow?.orderFrontRegardless()
         isProjectorWindowVisible = true
-        print("✅ Projector window should now be visible on external display")
+        logInfo("\(LoggingService.Emoji.success) Projector window should now be visible on external display", category: .projector)
     }
     
     func hideProjectorWindow() {
@@ -648,19 +666,19 @@ class ProjectorWindowManager: ObservableObject {
         
         // If window is in fullscreen, exit fullscreen first
         if window.styleMask.contains(.fullScreen) {
-            print("📺 [PROJECTOR] Exiting fullscreen before hiding...")
+            logDebug("\(LoggingService.Emoji.projector) Exiting fullscreen before hiding...", category: .projector)
             window.toggleFullScreen(nil)
             
             // Wait for fullscreen exit, then hide
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 window.orderOut(nil)
                 self.isProjectorWindowVisible = false
-                print("📺 [PROJECTOR] Window hidden after fullscreen exit")
+                logDebug("\(LoggingService.Emoji.projector) Window hidden after fullscreen exit", category: .projector)
             }
         } else {
             window.orderOut(nil)
             isProjectorWindowVisible = false
-            print("📺 [PROJECTOR] Window hidden immediately")
+            logDebug("\(LoggingService.Emoji.projector) Window hidden immediately", category: .projector)
         }
     }
     

@@ -47,6 +47,9 @@ final class UIStateViewModel: ObservableObject {
         countdown = duration
         isCountingDown = true
         
+        // Post notification for countdown start (for projector display)
+        NotificationCenter.default.post(name: Notification.Name("countdownStart"), object: nil)
+        
         // Start modern async countdown
         Task { @MainActor in
             await runCountdown()
@@ -216,6 +219,9 @@ final class UIStateViewModel: ObservableObject {
         if isCountingDown && countdown <= 0 {
             logInfo("\(LoggingService.Emoji.success) Countdown completed", category: .ui)
             isCountingDown = false
+            
+            // Post notification that countdown finished - THIS WAS MISSING!
+            NotificationCenter.default.post(name: .countdownFinished, object: nil)
         }
     }
     

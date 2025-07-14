@@ -75,14 +75,14 @@ struct ControlCenterView: View {
                 Menu {
                     ForEach(viewModel.availableCameras, id: \.uniqueID) { camera in
                         Button(action: {
-                            viewModel.selectCamera(camera)
+                            Task {
+                                await viewModel.selectCamera(camera)
+                            }
                         }) {
                             HStack {
                                 Text(camera.localizedName)
                                 if camera.deviceType == .continuityCamera {
                                     Image(systemName: "iphone")
-                                } else if camera.deviceType == .external {
-                                    Image(systemName: "camera.macro")
                                 } else {
                                     Image(systemName: "camera")
                                 }
@@ -98,8 +98,10 @@ struct ControlCenterView: View {
                     Divider()
                     
                     Button(action: {
-                        print("🔄 Manual camera refresh requested")
-                        viewModel.findAndSetupContinuityCamera()
+                        logInfo("\(LoggingService.Emoji.camera) Manual camera refresh requested", category: .camera)
+                        Task {
+                            await viewModel.refreshAvailableCameras()
+                        }
                     }) {
                         HStack {
                             Image(systemName: "arrow.clockwise")
@@ -108,7 +110,7 @@ struct ControlCenterView: View {
                     }
                     
                     Button(action: {
-                        print("📱 Force Continuity Camera connection requested")
+                        logInfo("\(LoggingService.Emoji.camera) Force Continuity Camera connection requested", category: .camera)
                         viewModel.forceContinuityCameraConnection()
                     }) {
                         HStack {
@@ -330,7 +332,9 @@ struct ControlCenterView: View {
                 } else {
                     // Start button
                     Button(action: {
-                        viewModel.startSlideshow()
+                        Task {
+                            await viewModel.startSlideshow()
+                        }
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
@@ -370,8 +374,32 @@ struct ControlCenterView: View {
                 StatusRow(label: "Projector", value: projectorManager.isProjectorWindowVisible ? "Active" : "Hidden",
                          color: projectorManager.isProjectorWindowVisible ? .green : .gray)
                 
-                StatusRow(label: "Ready", value: viewModel.isReadyForNextPhoto ? "Yes" : "Processing...",
-                         color: viewModel.isReadyForNextPhoto ? .green : .orange)
+                StatusRow(label: "OpenAI", value: viewModel.isOpenAIConfigured ? "Configured" : "Not Configured",
+                         color: viewModel.isOpenAIConfigured ? .green : .red)
+                
+                StatusRow(label: "Themes", value: viewModel.isThemeConfigurationLoaded ? "\(viewModel.themes.count) Available" : "Loading...",
+                         color: viewModel.isThemeConfigurationLoaded ? .green : .orange)
+                
+                StatusRow(label: "Ready", value: canTakePhoto ? "Yes" : "Not Ready",
+                         color: canTakePhoto ? .green : .orange)
+                
+                // Add processing status row
+                if viewModel.isProcessing {
+                    let processingStatus = viewModel.imageProcessingViewModel.getProcessingStatusSummary()
+                    StatusRow(label: "Processing", value: processingStatus.statusText,
+                             color: .blue)
+                    
+                    // Show current processing step with icon
+                    HStack {
+                        Image(systemName: processingStatus.statusIcon)
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Text(processingStatus.statusText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
                 
                 if viewModel.isInMinimumDisplayPeriod {
                     StatusRow(label: "Display Timer", value: "\(viewModel.minimumDisplayTimeRemaining)s",
@@ -442,7 +470,9 @@ struct ControlCenterView: View {
         viewModel.selectedTheme != nil && 
         viewModel.isReadyForNextPhoto && 
         !viewModel.isCountingDown && 
-        !viewModel.isProcessing
+        !viewModel.isProcessing &&
+        viewModel.isThemeConfigurationLoaded &&
+        viewModel.isOpenAIConfigured
     }
     
     // MARK: - Actions
@@ -529,7 +559,7 @@ struct StatusRow: View {
 
 #Preview {
     ControlCenterView()
-                    .environmentObject(RefactoredPhotoBoothViewModel())
+                    .environmentObject(PhotoBoothViewModel())
         .environmentObject(ProjectorWindowManager())
         .frame(width: 800, height: 600)
 } 

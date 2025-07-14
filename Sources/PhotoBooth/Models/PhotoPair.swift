@@ -19,18 +19,18 @@ struct PhotoPair: Identifiable {
         // Validate that both files exist and are readable
         guard FileManager.default.fileExists(atPath: originalURL.path),
               FileManager.default.fileExists(atPath: themedURL.path) else {
-            print("⚠️ PhotoPair init failed: Missing files")
-            print("   Original: \(originalURL.path) - \(FileManager.default.fileExists(atPath: originalURL.path) ? "✅" : "❌")")
-            print("   Themed: \(themedURL.path) - \(FileManager.default.fileExists(atPath: themedURL.path) ? "✅" : "❌")")
+            logWarning("\(LoggingService.Emoji.warning) PhotoPair init failed: Missing files", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.warning) Original: \(originalURL.path) - \(FileManager.default.fileExists(atPath: originalURL.path) ? "✅" : "❌")", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.warning) Themed: \(themedURL.path) - \(FileManager.default.fileExists(atPath: themedURL.path) ? "✅" : "❌")", category: .slideshow)
             return nil
         }
         
         // Check file permissions and readability
         guard FileManager.default.isReadableFile(atPath: originalURL.path),
               FileManager.default.isReadableFile(atPath: themedURL.path) else {
-            print("⚠️ PhotoPair init failed: Files not readable")
-            print("   Original readable: \(FileManager.default.isReadableFile(atPath: originalURL.path))")
-            print("   Themed readable: \(FileManager.default.isReadableFile(atPath: themedURL.path))")
+            logWarning("\(LoggingService.Emoji.warning) PhotoPair init failed: Files not readable", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.warning) Original readable: \(FileManager.default.isReadableFile(atPath: originalURL.path))", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.warning) Themed readable: \(FileManager.default.isReadableFile(atPath: themedURL.path))", category: .slideshow)
             return nil
         }
         
@@ -41,18 +41,18 @@ struct PhotoPair: Identifiable {
             
             guard let originalImage = NSImage(data: originalData),
                   let themedImage = NSImage(data: themedData) else {
-                print("⚠️ PhotoPair init failed: Invalid image data")
-                print("   Original data size: \(originalData.count) bytes")
-                print("   Themed data size: \(themedData.count) bytes")
+                logWarning("\(LoggingService.Emoji.warning) PhotoPair init failed: Invalid image data", category: .slideshow)
+                logDebug("\(LoggingService.Emoji.warning) Original data size: \(originalData.count) bytes", category: .slideshow)
+                logDebug("\(LoggingService.Emoji.warning) Themed data size: \(themedData.count) bytes", category: .slideshow)
                 return nil
             }
             
             // Validate image dimensions
             guard originalImage.size.width > 0 && originalImage.size.height > 0,
                   themedImage.size.width > 0 && themedImage.size.height > 0 else {
-                print("⚠️ PhotoPair init failed: Invalid image dimensions")
-                print("   Original: \(originalImage.size)")
-                print("   Themed: \(themedImage.size)")
+                logWarning("\(LoggingService.Emoji.warning) PhotoPair init failed: Invalid image dimensions", category: .slideshow)
+                logDebug("\(LoggingService.Emoji.warning) Original: \(originalImage.size)", category: .slideshow)
+                logDebug("\(LoggingService.Emoji.warning) Themed: \(themedImage.size)", category: .slideshow)
                 return nil
             }
             
@@ -63,9 +63,9 @@ struct PhotoPair: Identifiable {
             self.themedImage = themedImage
             
         } catch {
-            print("⚠️ PhotoPair init failed: \(error.localizedDescription)")
-            print("   Original: \(originalURL.path)")
-            print("   Themed: \(themedURL.path)")
+            logError("\(LoggingService.Emoji.error) PhotoPair init failed: \(error.localizedDescription)", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.error) Original: \(originalURL.path)", category: .slideshow)
+            logDebug("\(LoggingService.Emoji.error) Themed: \(themedURL.path)", category: .slideshow)
             return nil
         }
     }

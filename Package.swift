@@ -26,6 +26,9 @@ let package = Package(
                 .product(name: "OpenAI", package: "OpenAI"),
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
             ],
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("CoreMedia"),

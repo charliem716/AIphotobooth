@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "themes": [
+    {
+      "id": 1,
+      "name": "Studio Ghibli",
+      "prompt": "Transform this photo into Studio Ghibli anime style with soft watercolor backgrounds, whimsical characters, and magical atmosphere like Spirited Away or My Neighbor Totoro",
+      "enabled": true,
+      "category": "anime"
+    },
+    {
+      "id": 2,
+      "name": "Simpsons",
+      "prompt": "Transform this photo into The Simpsons cartoon style with yellow skin, big eyes, overbite, and the iconic Springfield art style",
+      "enabled": true,
+      "category": "tv_cartoon"
+    },
+    {
+      "id": 3,
+      "name": "Rick and Morty",
+      "prompt": "Transform this photo into Rick and Morty animation style with exaggerated features, drooling mouths, unibrows, and sci-fi elements",
+      "enabled": true,
+      "category": "tv_cartoon"
+    },
+    {
+      "id": 4,
+      "name": "Dragon Ball Z",
+      "prompt": "Transform this photo into Dragon Ball Z anime style with spiky hair, intense expressions, power auras, and dynamic action poses",
+      "enabled": true,
+      "category": "anime"
+    },
+    {
+      "id": 5,
+      "name": "Scooby Doo",
+      "prompt": "Transform this photo into Scooby Doo cartoon style with retro animation design and bright colors",
+      "enabled": true,
+      "category": "tv_cartoon"
+    },
+    {
+      "id": 6,
+      "name": "SpongeBob",
+      "prompt": "Transform this photo into SpongeBob SquarePants style with underwater Bikini Bottom setting, bright colors, and zany cartoon expressions",
+      "enabled": true,
+      "category": "tv_cartoon"
+    },
+    {
+      "id": 7,
+      "name": "South Park",
+      "prompt": "Transform this photo into South Park style with simple geometric shapes, cut-out animation look, beady eyes, and Colorado mountain town setting",
+      "enabled": true,
+      "category": "tv_cartoon"
+    },
+    {
+      "id": 8,
+      "name": "Pixar",
+      "prompt": "Transform this photo into Pixar animation style with vibrant colors, expressive cartoon features, and the distinctive 3D animated look of characters from Toy Story, Finding Nemo, and The Incredibles",
+      "enabled": true,
+      "category": "3d_animation"
+    },
+    {
+      "id": 9,
+      "name": "Flintstones",
+      "prompt": "Transform this photo into The Flintstones cartoon style with stone age setting, prehistoric elements, and classic Hanna-Barbera 60s animation design",
+      "enabled": true,
+      "category": "tv_cartoon"
+    }
+  ]
+} 

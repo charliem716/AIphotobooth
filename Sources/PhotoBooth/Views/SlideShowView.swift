@@ -116,12 +116,12 @@ struct SlideShowView: View {
             .animation(.easeInOut(duration: 0.5).delay(1.0), value: slideShowViewModel.isActive)
         }
         .onAppear {
-            print("🎬 SlideShowView appeared, slideshow active: \(slideShowViewModel.isActive)")
+            logInfo("\(LoggingService.Emoji.slideshow) SlideShowView appeared, slideshow active: \(slideShowViewModel.isActive)", category: .slideshow)
         }
         .onKeyPress { keyPress in
             // Only handle ESC key when no modifiers are pressed
             if keyPress.key == .escape && keyPress.modifiers.isEmpty {
-                print("🎬 ESC key pressed in slideshow (no modifiers)")
+                logInfo("\(LoggingService.Emoji.slideshow) ESC key pressed in slideshow (no modifiers)", category: .slideshow)
                 slideShowViewModel.stopSlideshow()
                 return .handled
             }

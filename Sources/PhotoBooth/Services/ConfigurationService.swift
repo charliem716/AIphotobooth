@@ -78,10 +78,12 @@ final class ConfigurationService: ObservableObject, ConfigurationServiceProtocol
         
         // Validate OpenAI configuration
         if let apiKey = getOpenAIKey(), !apiKey.isEmpty {
-            logger.info("OpenAI API key configured (length: \(apiKey.count))")
+            logger.info("✅ OpenAI API key configured (length: \(apiKey.count))")
+            logger.debug("🔑 OpenAI key prefix: \(String(apiKey.prefix(7)))...")
             isOpenAIConfigured = true
         } else {
-            logger.warning("OpenAI API key not found or empty")
+            logger.warning("❌ OpenAI API key not found or empty")
+            logger.debug("🔍 Environment check - OPENAI_KEY: \(ProcessInfo.processInfo.environment["OPENAI_KEY"] != nil ? "present" : "missing")")
             isOpenAIConfigured = false
         }
         

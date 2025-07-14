@@ -44,12 +44,13 @@ final class CameraService: NSObject, ObservableObject, CameraServiceProtocol {
         
         guard authorizationStatus == .authorized else {
             logger.warning("Camera access not authorized")
+            isCameraConnected = false
             return
         }
         
         await setupCaptureSession()
         await discoverCameras()
-        await startSession()
+        // Note: startSession() will be called when a camera is selected in setupCameraSession
     }
     
     /// Request camera permission from the user
@@ -82,33 +83,100 @@ final class CameraService: NSObject, ObservableObject, CameraServiceProtocol {
     
     /// Discover available cameras, prioritizing Continuity Camera
     func discoverCameras() async {
-        logger.info("Discovering available cameras...")
+        logger.info("🔍 [DEBUG] Starting comprehensive camera discovery...")
+        
+        // Try multiple discovery approaches for better iPhone detection
+        let allDeviceTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera,
+            .continuityCamera,
+            .external
+        ]
+        
+        logger.info("🔍 [DEBUG] Searching for device types: \(allDeviceTypes.map { $0.rawValue })")
         
         let discoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [
-                .continuityCamera,
-                .builtInWideAngleCamera,
-                .external
-            ],
+            deviceTypes: allDeviceTypes,
             mediaType: .video,
             position: .unspecified
         )
         
         availableCameras = discoverySession.devices
-        logger.info("Found \(self.availableCameras.count) cameras")
         
-        // Log available cameras for debugging
-        for camera in availableCameras {
-            logger.debug("Camera: \(camera.localizedName) (Type: \(camera.deviceType.rawValue))")
+        // Also try the default video devices approach for additional detection
+        let defaultDevices = AVCaptureDevice.devices(for: .video)
+        logger.info("🔍 [DEBUG] Default video devices: \(defaultDevices.count)")
+        for device in defaultDevices {
+            if !availableCameras.contains(device) {
+                logger.info("   Additional device: \(device.localizedName) (Type: \(device.deviceType.rawValue))")
+                availableCameras.append(device)
+            }
         }
         
-        // Auto-select Continuity Camera if available
-        if let continuityCam = availableCameras.first(where: { $0.deviceType == .continuityCamera }) {
-            await selectCamera(continuityCam)
-            logger.info("Auto-selected Continuity Camera: \(continuityCam.localizedName)")
-        } else if let firstCamera = availableCameras.first {
-            await selectCamera(firstCamera)
-            logger.info("Auto-selected first available camera: \(firstCamera.localizedName)")
+        logger.info("🔍 [DEBUG] Found \(self.availableCameras.count) total cameras:")
+        
+        for (index, device) in self.availableCameras.enumerated() {
+            let isConnected = device.isConnected ? "✅ Connected" : "❌ Disconnected"
+            let position = device.position.description
+            logger.info("   \(index + 1). \(device.localizedName)")
+            logger.info("      Type: \(device.deviceType.rawValue)")
+            logger.info("      Position: \(position)")
+            logger.info("      Status: \(isConnected)")
+            logger.info("      Unique ID: \(device.uniqueID)")
+            
+            // Special detection for potential iPhones
+            if device.localizedName.lowercased().contains("iphone") ||
+               device.localizedName.lowercased().contains("charlie") ||
+               device.localizedName.contains("15 Pro") ||
+               device.deviceType == .continuityCamera ||
+               device.deviceType == .external {
+                logger.info("      ⭐ POTENTIAL CONTINUITY CAMERA DETECTED!")
+            }
+        }
+        
+        logger.info("🔍 [DEBUG] Total cameras after comprehensive search: \(self.availableCameras.count)")
+        
+        // Check if we have any continuity cameras specifically
+        let continuityCameras = availableCameras.filter { $0.deviceType == .continuityCamera }
+        logger.info("🔍 [DEBUG] Continuity cameras found: \(continuityCameras.count)")
+        for camera in continuityCameras {
+            logger.info("🔍 [DEBUG] Continuity camera: \(camera.localizedName), connected: \(camera.isConnected)")
+        }
+        
+        // Auto-select best camera using the working logic
+        await selectBestAvailableCamera()
+    }
+    
+    /// Select the best available camera using the working logic
+    private func selectBestAvailableCamera() async {
+        var selectedCamera: AVCaptureDevice?
+        
+        // First look for Charlie's iPhone specifically
+        if let charlieCamera = self.availableCameras.first(where: { 
+            $0.localizedName.contains("Charlie") || $0.localizedName.contains("15 Pro")
+        }) {
+            logger.info("📱 Found Charlie's iPhone: \(charlieCamera.localizedName)")
+            selectedCamera = charlieCamera
+        }
+        // Then try continuity camera type
+        else if let continuityCamera = self.availableCameras.first(where: { $0.deviceType == .continuityCamera }) {
+            logger.info("📱 Found Continuity Camera: \(continuityCamera.localizedName)")
+            selectedCamera = continuityCamera
+        }
+        // Then try external cameras (needed for continuity cameras until Info.plist is properly configured)
+        else if let externalCamera = self.availableCameras.first(where: { $0.deviceType == .external }) {
+            logger.info("📱 Found external camera: \(externalCamera.localizedName)")
+            selectedCamera = externalCamera
+        }
+        // Fallback to built-in camera
+        else if let builtInCamera = self.availableCameras.first(where: { $0.deviceType == .builtInWideAngleCamera }) {
+            logger.info("💻 Using built-in camera: \(builtInCamera.localizedName)")
+            selectedCamera = builtInCamera
+        }
+        
+        if let camera = selectedCamera {
+            await selectCamera(camera)
+        } else {
+            logger.warning("❌ No camera found")
         }
     }
     
@@ -120,55 +188,156 @@ final class CameraService: NSObject, ObservableObject, CameraServiceProtocol {
         }
         
         selectedCameraDevice = device
-        logger.info("Selected camera: \(device.localizedName)")
+        logger.info("📱 [DEBUG] Selecting camera: \(device.localizedName)")
+        logger.info("📱 [DEBUG] Camera type: \(device.deviceType.rawValue)")
+        logger.info("📱 [DEBUG] Camera connected: \(device.isConnected)")
         
-        if isSessionRunning {
-            await reconfigureSessionForSelectedCamera()
+        await setupCameraSession(with: device)
+    }
+    
+    /// Setup camera session with the selected device using the working approach
+    private func setupCameraSession(with device: AVCaptureDevice) async {
+        guard let session = captureSession else { return }
+        
+        session.beginConfiguration()
+        
+        // Remove existing inputs
+        session.inputs.forEach { session.removeInput($0) }
+        session.outputs.forEach { session.removeOutput($0) }
+        
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+            
+            if session.canAddInput(input) {
+                session.addInput(input)
+                
+                // Setup photo output
+                let output = AVCapturePhotoOutput()
+                if session.canAddOutput(output) {
+                    session.addOutput(output)
+                    photoOutput = output
+                }
+                
+                logger.info("✅ Camera setup complete: \(device.localizedName)")
+                
+            } else {
+                throw PhotoBoothError.cameraNotFound
+            }
+        } catch {
+            logger.error("Failed to setup camera: \(error.localizedDescription)")
+            isCameraConnected = false
+        }
+        
+        session.commitConfiguration()
+        
+        // Start the session and update connection status
+        await startSession()
+        
+        // Give the session a moment to fully initialize and update status once more
+        try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+        
+        // Final connection status update
+        if let session = captureSession {
+            let hasValidSetup = !session.inputs.isEmpty && selectedCameraDevice != nil && session.isRunning
+            isCameraConnected = hasValidSetup
+            logger.info("📱 Final connection status - Connected: \(hasValidSetup)")
         }
     }
     
     /// Capture a photo using the current camera
     func capturePhoto() {
+        logger.info("🚀 CameraService.capturePhoto() called")
+        
         guard let photoOutput = photoOutput else {
-            logger.error("Photo output not available")
+            logger.error("❌ Photo output not available")
             captureDelegate?.cameraService(self, didFailWithError: CameraServiceError.photoOutputNotAvailable)
             return
         }
         
         guard isCameraConnected && isSessionRunning else {
-            logger.error("Camera not ready for capture")
+            logger.error("❌ Camera not ready for capture - Connected: \(self.isCameraConnected), Running: \(self.isSessionRunning)")
             captureDelegate?.cameraService(self, didFailWithError: CameraServiceError.cameraNotReady)
             return
         }
         
-        logger.info("Capturing photo...")
+        logger.info("📸 Capturing photo with AVCapturePhotoOutput...")
+        logger.debug("📸 Delegate set: \(self.captureDelegate != nil)")
         
         let settings = AVCapturePhotoSettings()
-        settings.isHighResolutionPhotoEnabled = true
+        // Use completely default settings to avoid any crashes
         
         photoOutput.capturePhoto(with: settings, delegate: self)
+        logger.debug("📸 capturePhoto() call completed")
     }
+    
+    /// Refresh and rediscover available cameras
+    func refreshCameras() async {
+        logger.info("🔄 Refreshing camera list...")
+        await discoverCameras()
+    }
+    
+    /// Force continuity camera connection using the working approach
+    func forceContinuityCameraConnection() async {
+        logger.info("📱 [DEBUG] Forcing Continuity Camera connection...")
+        await discoverCameras()
+        
+        // Look for Charlie's iPhone specifically first
+        if let charlieCamera = self.availableCameras.first(where: { 
+            $0.localizedName.contains("Charlie") || $0.localizedName.contains("15 Pro")
+        }) {
+            logger.info("📱 Found Charlie's iPhone: \(charlieCamera.localizedName)")
+            await selectCamera(charlieCamera)
+        }
+        // Then look for continuity camera type
+        else if let continuityCamera = self.availableCameras.first(where: { $0.deviceType == .continuityCamera }) {
+            logger.info("📱 Found Continuity Camera: \(continuityCamera.localizedName)")
+            await selectCamera(continuityCamera)
+        }
+        // Then look for external cameras (needed for continuity cameras)
+        else if let externalCamera = self.availableCameras.first(where: { $0.deviceType == .external }) {
+            logger.info("📱 Found external camera: \(externalCamera.localizedName)")
+            await selectCamera(externalCamera)
+        }
+        else {
+            logger.warning("❌ No Continuity Camera found")
+        }
+    }
+    
+
     
     /// Start the camera session
     func startSession() async {
         guard let captureSession = captureSession else {
             logger.error("Capture session not available")
+            isCameraConnected = false
             return
         }
         
         guard !captureSession.isRunning else {
             logger.debug("Capture session already running")
+            // Check if we have a valid input and set connection status
+            let hasValidSetup = !captureSession.inputs.isEmpty && selectedCameraDevice != nil
+            isCameraConnected = hasValidSetup
+            logger.info("📱 Session already running - Connected: \(hasValidSetup)")
             return
         }
         
         logger.info("Starting camera session...")
         captureSession.startRunning()
+        
+        // Give the session a moment to start
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        
         isSessionRunning = captureSession.isRunning
         
         if isSessionRunning {
-            logger.info("Camera session started successfully")
+            // Set connection status based on session state
+            let hasValidSetup = !captureSession.inputs.isEmpty && selectedCameraDevice != nil
+            isCameraConnected = hasValidSetup
+            logger.info("✅ Camera session started successfully - Connected: \(hasValidSetup)")
         } else {
-            logger.error("Failed to start camera session")
+            self.isCameraConnected = false
+            logger.error("❌ Failed to start camera session")
         }
     }
     
@@ -179,7 +348,29 @@ final class CameraService: NSObject, ObservableObject, CameraServiceProtocol {
         logger.info("Stopping camera session...")
         captureSession.stopRunning()
         isSessionRunning = false
-        isCameraConnected = false
+        self.isCameraConnected = false
+        logger.info("❌ Camera session stopped - Connected: \(self.isCameraConnected)")
+    }
+    
+    /// Update connection status based on actual session state
+    private func updateConnectionStatus() {
+        guard let captureSession = captureSession else {
+            isCameraConnected = false
+            logger.info("📱 Connection status: No capture session")
+            return
+        }
+        
+        // Check if session is running and has valid inputs
+        let hasValidInputs = !captureSession.inputs.isEmpty
+        let sessionRunning = captureSession.isRunning
+        let hasDevice = selectedCameraDevice != nil
+        let deviceName = selectedCameraDevice?.localizedName ?? "none"
+        
+        let isConnected = hasValidInputs && sessionRunning && hasDevice
+        
+        isCameraConnected = isConnected
+        isSessionRunning = sessionRunning
+        logger.info("📱 Connection status updated - Connected: \(isConnected), Running: \(sessionRunning), Device: \(hasDevice) (\(deviceName)), Inputs: \(hasValidInputs)")
     }
     
     /// Get the preview layer for camera display
@@ -216,49 +407,11 @@ final class CameraService: NSObject, ObservableObject, CameraServiceProtocol {
         }
     }
     
-    private func reconfigureSessionForSelectedCamera() async {
-        guard let captureSession = captureSession,
-              let selectedDevice = selectedCameraDevice else {
-            logger.error("Cannot reconfigure session - missing session or device")
-            return
-        }
-        
-        logger.info("Reconfiguring session for camera: \(selectedDevice.localizedName)")
-        
-        captureSession.beginConfiguration()
-        
-        // Remove existing video input
-        let currentInputs = captureSession.inputs
-        for input in currentInputs {
-            if let deviceInput = input as? AVCaptureDeviceInput,
-               deviceInput.device.hasMediaType(.video) {
-                captureSession.removeInput(deviceInput)
-                logger.debug("Removed existing video input")
-            }
-        }
-        
-        // Add new video input
-        do {
-            let deviceInput = try AVCaptureDeviceInput(device: selectedDevice)
-            if captureSession.canAddInput(deviceInput) {
-                captureSession.addInput(deviceInput)
-                isCameraConnected = true
-                logger.info("Added new video input: \(selectedDevice.localizedName)")
-            } else {
-                logger.error("Cannot add device input to session")
-                isCameraConnected = false
-            }
-        } catch {
-            logger.error("Failed to create device input: \(error.localizedDescription)")
-            isCameraConnected = false
-        }
-        
-        captureSession.commitConfiguration()
-    }
+
     
     // MARK: - Image Processing Helpers
     
-    /// Crop image to 3:2 landscape aspect ratio (consistent with PhotoBoothViewModel)
+    /// Crop image to 3:2 landscape aspect ratio (standard photo booth format)
     private func cropToLandscape(_ image: NSImage) -> NSImage? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
@@ -310,9 +463,13 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
+        Task { @MainActor in
+            logger.info("📸 photoOutput delegate callback triggered")
+        }
+        
         if let error = error {
             Task { @MainActor in
-                logger.error("Photo capture error: \(error.localizedDescription)")
+                logger.error("❌ Photo capture error: \(error.localizedDescription)")
                 captureDelegate?.cameraService(self, didFailWithError: CameraServiceError.captureFailed(error))
             }
             return
@@ -321,20 +478,21 @@ extension CameraService: AVCapturePhotoCaptureDelegate {
         guard let data = photo.fileDataRepresentation(),
               let rawImage = NSImage(data: data) else {
             Task { @MainActor in
-                logger.error("Could not get image data from photo")
+                logger.error("❌ Could not get image data from photo")
                 captureDelegate?.cameraService(self, didFailWithError: CameraServiceError.imageDataConversionFailed)
             }
             return
         }
         
         Task { @MainActor in
-            logger.info("Photo captured successfully, size: \(data.count) bytes")
-            logger.debug("Raw captured image: \(rawImage.size.width) x \(rawImage.size.height)")
+            logger.info("✅ Photo captured successfully, size: \(data.count) bytes")
+            logger.debug("📸 Raw captured image: \(rawImage.size.width) x \(rawImage.size.height)")
             
-            // 🔧 FIX: Crop to 3:2 aspect ratio immediately after capture (consistent with PhotoBoothViewModel)
+            // 🔧 FIX: Crop to 3:2 aspect ratio immediately after capture (standard photo booth format)
             let croppedImage = cropToLandscape(rawImage) ?? rawImage
-            logger.debug("Final image: \(croppedImage.size.width) x \(croppedImage.size.height)")
+            logger.debug("📸 Final image: \(croppedImage.size.width) x \(croppedImage.size.height)")
             
+            logger.debug("📸 Calling captureDelegate with cropped image")
             captureDelegate?.cameraService(self, didCapturePhoto: croppedImage)
         }
     }

@@ -15,8 +15,8 @@ struct ContentView: View {
                 projectorManager.setViewModel(viewModel)
                 
                 // Debug: Verify shared ViewModel instance
-                print("📱 [DEBUG] Control Center ViewModel ID: \(ObjectIdentifier(viewModel))")
-                print("🔗 [DEBUG] Setting projector manager ViewModel to same instance")
+                        logDebug("\(LoggingService.Emoji.info) Control Center ViewModel ID: \(ObjectIdentifier(viewModel))", category: .app)
+        logDebug("\(LoggingService.Emoji.projector) Setting projector manager ViewModel to same instance", category: .projector)
                 
                 // Auto-show projector on startup if setting is enabled and there are multiple displays
                 // Only if slideshow is not active
@@ -53,7 +53,7 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-                    .environmentObject(RefactoredPhotoBoothViewModel())
+                    .environmentObject(PhotoBoothViewModel())
         .environmentObject(ProjectorWindowManager())
 } 
 

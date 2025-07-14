@@ -204,7 +204,7 @@ struct SettingsView: View {
                 try FileManager.default.removeItem(at: file)
             }
         } catch {
-            print("Failed to clear cache: \(error)")
+                                logError("\(LoggingService.Emoji.error) Failed to clear cache: \(error)", category: .error)
         }
     }
 } 

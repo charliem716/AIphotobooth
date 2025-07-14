@@ -36,19 +36,19 @@ struct ProjectorCountdownView: View {
             .zIndex(1000)
         }
         .onAppear {
-            print("🎬 [PROJECTOR] ProjectorCountdownView appeared")
-            print("📺 [DEBUG] Projector ViewModel ID: \(ObjectIdentifier(viewModel))")
-            print("🔍 [DEBUG] Initial state - isCountingDown: \(viewModel.isCountingDown), countdown: \(viewModel.countdown)")
+            logInfo("\(LoggingService.Emoji.projector) ProjectorCountdownView appeared", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Projector ViewModel ID: \(ObjectIdentifier(viewModel))", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Initial state - isCountingDown: \(viewModel.isCountingDown), countdown: \(viewModel.countdown)", category: .projector)
         }
-        .onChange(of: viewModel.isCountingDown) { newValue in
-            print("🎬 [PROJECTOR] Countdown state changed - isCountingDown: \(newValue)")
-            print("📺 [DEBUG] Projector ViewModel ID: \(ObjectIdentifier(viewModel))")
-            print("🔍 [DEBUG] Full state - countdown: \(viewModel.countdown), isCountingDown: \(newValue)")
+        .onChange(of: viewModel.isCountingDown) { _, newValue in
+            logDebug("\(LoggingService.Emoji.projector) Countdown state changed - isCountingDown: \(newValue)", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Projector ViewModel ID: \(ObjectIdentifier(viewModel))", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Full state - countdown: \(viewModel.countdown), isCountingDown: \(newValue)", category: .projector)
         }
-        .onChange(of: viewModel.countdown) { newValue in
-            print("🎬 [PROJECTOR] Countdown value changed - countdown: \(newValue)")
-            print("📺 [DEBUG] Projector ViewModel ID: \(ObjectIdentifier(viewModel))")
-            print("🔍 [DEBUG] Full state - isCountingDown: \(viewModel.isCountingDown), countdown: \(newValue)")
+        .onChange(of: viewModel.countdown) { _, newValue in
+            logDebug("\(LoggingService.Emoji.projector) Countdown value changed - countdown: \(newValue)", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Projector ViewModel ID: \(ObjectIdentifier(viewModel))", category: .projector)
+            logDebug("\(LoggingService.Emoji.projector) Full state - isCountingDown: \(viewModel.isCountingDown), countdown: \(newValue)", category: .projector)
         }
     }
     
@@ -57,6 +57,6 @@ struct ProjectorCountdownView: View {
 
 #Preview {
     ProjectorCountdownView(session: nil)
-                    .environmentObject(RefactoredPhotoBoothViewModel())
+                    .environmentObject(PhotoBoothViewModel())
         .frame(width: 800, height: 600)
 } 

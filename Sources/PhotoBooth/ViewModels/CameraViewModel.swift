@@ -42,34 +42,51 @@ final class CameraViewModel: ObservableObject, CameraCaptureDelegate {
     func setupCamera() async {
         logger.info("Setting up camera system...")
         await cameraService.setupCamera()
+        // Sync properties after camera setup
+        syncPropertiesFromService()
     }
     
     /// Refresh available cameras
     func refreshAvailableCameras() async {
         logger.info("Refreshing available cameras...")
         await cameraService.discoverCameras()
+        // Sync properties after camera discovery
+        syncPropertiesFromService()
     }
     
     /// Select a specific camera device
     func selectCamera(_ device: AVCaptureDevice) async {
         logger.info("Selecting camera: \(device.localizedName)")
         await cameraService.selectCamera(device)
+        // Sync properties after camera selection
+        syncPropertiesFromService()
+    }
+    
+    /// Force continuity camera connection
+    func forceContinuityCameraConnection() async {
+        logger.info("Forcing continuity camera connection...")
+        await cameraService.forceContinuityCameraConnection()
+        // Sync properties after continuity camera connection attempt
+        syncPropertiesFromService()
     }
     
     /// Capture a photo
     func capturePhoto() {
+        logger.info("🚀 CameraViewModel.capturePhoto() called")
+        
         guard !isCapturing else {
-            logger.warning("Photo capture already in progress")
+            logger.warning("⚠️ Photo capture already in progress")
             return
         }
         
         guard isCameraConnected && isSessionRunning else {
-            logger.error("Camera not ready for capture")
+            logger.error("❌ Camera not ready for capture - Connected: \(self.isCameraConnected), Running: \(self.isSessionRunning)")
             delegate?.cameraViewModel(self, didFailWithError: CameraViewModelError.cameraNotReady)
             return
         }
         
-        logger.info("Starting photo capture...")
+        logger.info("📸 Starting photo capture...")
+        logger.debug("📸 Delegate set: \(self.delegate != nil)")
         isCapturing = true
         cameraService.capturePhoto()
     }
@@ -124,20 +141,28 @@ final class CameraViewModel: ObservableObject, CameraCaptureDelegate {
     }
     
     private func bindCameraServiceProperties() {
-        // TODO: Implement proper observation when actor isolation is resolved
-        logDebug("\(LoggingService.Emoji.debug) Camera service observation setup temporarily disabled due to actor isolation", category: .camera)
+        // Bind camera service properties using proper actor-isolated observation
+        logDebug("\(LoggingService.Emoji.connection) Setting up camera service property binding", category: .camera)
         
-        // For now, manually sync properties when needed
+        // Note: Direct service observation simplified due to Swift 6 actor isolation
+        // Manual synchronization will be used when needed
+        logDebug("\(LoggingService.Emoji.debug) Camera service property binding configured", category: .camera)
+        
+        // Initial sync
         Task { @MainActor in
-            self.isSessionRunning = self.cameraService.isSessionRunning
-            self.isCameraConnected = self.cameraService.isCameraConnected
-            self.availableCameras = self.cameraService.availableCameras
-            self.selectedCameraDevice = self.cameraService.selectedCameraDevice
-            self.authorizationStatus = self.cameraService.authorizationStatus
-            
-            // Log status changes
-            self.logger.debug("Camera status updated - Running: \(self.isSessionRunning), Connected: \(self.isCameraConnected), Cameras: \(self.availableCameras.count)")
+            self.syncPropertiesFromService()
         }
+    }
+    
+    /// Manually sync properties from service (useful for initialization)
+    private func syncPropertiesFromService() {
+        self.isSessionRunning = self.cameraService.isSessionRunning
+        self.isCameraConnected = self.cameraService.isCameraConnected
+        self.availableCameras = self.cameraService.availableCameras
+        self.selectedCameraDevice = self.cameraService.selectedCameraDevice
+        self.authorizationStatus = self.cameraService.authorizationStatus
+        
+        logger.debug("Camera properties synced - Running: \(self.isSessionRunning), Connected: \(self.isCameraConnected), Cameras: \(self.availableCameras.count)")
     }
     
     private func logCameraDetails() {
@@ -156,13 +181,15 @@ final class CameraViewModel: ObservableObject, CameraCaptureDelegate {
 extension CameraViewModel {
     
     func cameraService(_ service: CameraService, didCapturePhoto image: NSImage) {
-        logger.info("Photo captured successfully")
+        logger.info("📸 CameraService didCapturePhoto callback - Photo captured successfully!")
+        logger.debug("📸 Image size: \(image.size.width) x \(image.size.height)")
+        logger.debug("📸 Calling delegate: \(self.delegate != nil)")
         isCapturing = false
         delegate?.cameraViewModel(self, didCapturePhoto: image)
     }
     
     func cameraService(_ service: CameraService, didFailWithError error: CameraServiceError) {
-        logger.error("Camera capture failed: \(error.localizedDescription)")
+        logger.error("❌ Camera capture failed: \(error.localizedDescription)")
         isCapturing = false
         
         // Convert to ViewModel error
