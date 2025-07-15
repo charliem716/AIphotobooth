@@ -11,6 +11,7 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
     // MARK: - Properties
     private var openAI: OpenAI?
     private let configService: ConfigurationService
+    private let networkService: NetworkServiceProtocol
     private let logger = Logger(subsystem: "PhotoBooth", category: "OpenAI")
     
     // MARK: - Published Properties
@@ -21,12 +22,19 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
     
     /// Initialize with default configuration service
     convenience init() {
-        self.init(configurationService: ConfigurationService.shared)
+        self.init(
+            configurationService: ConfigurationService.shared,
+            networkService: NetworkService()
+        )
     }
     
     /// Initialize with dependency injection
-    init(configurationService: ConfigurationService) {
+    init(
+        configurationService: ConfigurationService,
+        networkService: NetworkServiceProtocol
+    ) {
         self.configService = configurationService
+        self.networkService = networkService
         setupOpenAI()
         
         // Listen for configuration changes
@@ -75,226 +83,248 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
         logger.info("🤖 Using OpenAI model: gpt-image-1")
         logger.info("📐 Output size: 1536x1024 (high quality for party souvenirs)")
         
-        let maxRetries = 3
-        var lastError: Error?
-        
-        for attempt in 1...maxRetries {
-            logger.info("🔄 === ATTEMPT \(attempt) of \(maxRetries) ===")
-            do {
-                logger.debug("🔄 AI generation attempt \(attempt)/\(maxRetries)")
-                logger.info("⏳ Preparing image for upload...")
-                
-                // Convert NSImage to JPEG data for the API
-                // Skip optimization for gpt-image-1 (supports up to 50MB)
-                // Send full-size image for better quality
-                guard let tiffData = image.tiffRepresentation,
-                      let bitmap = NSBitmapImageRep(data: tiffData),
-                      let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
-                    throw OpenAIServiceError.imageConversionFailed
-                }
-                
-                logger.debug("📸 Full-size image data: \(jpegData.count) bytes")
-                logger.debug("📸 Original image size: \(image.size.width) x \(image.size.height)")
-                
-                // Check if image is within gpt-image-1 limits (50MB)
-                let maxSize = 50 * 1024 * 1024  // 50MB in bytes
-                if jpegData.count > maxSize {
-                    logger.error("❌ Image too large: \(jpegData.count) bytes (max: \(maxSize) bytes)")
-                    throw OpenAIServiceError.imageConversionFailed
-                }
-                
-                // Verify image data is valid
-                if let testImage = NSImage(data: jpegData) {
-                    logger.debug("✅ JPEG data is valid, can create NSImage from it")
-                    logger.debug("📊 Test image size: \(testImage.size.width) x \(testImage.size.height)")
-                } else {
-                    logger.error("❌ JPEG data is invalid, cannot create NSImage")
-                    throw OpenAIServiceError.imageConversionFailed
-                }
-                
-                logger.debug("📸 Using direct image editing with GPT-image-1...")
-                
-                // Create the theme-specific prompt
-                let editPrompt = """
-                Transform this photo into \(theme.name) style while preserving the exact same people, faces, poses, and composition from the original photo. \(theme.prompt)
-                
-                IMPORTANT: Keep all the people exactly as they appear in the original photo - same faces, same expressions, same positioning. Only change the art style, not the people or their appearance.
-                """
-                
-                logger.debug("📝 Edit prompt: \(editPrompt)")
-                
-                // Additional debug logging for prompt components
-                logger.debug("🎭 Theme name: \(theme.name)")
-                logger.debug("📝 Theme prompt: \(theme.prompt)")
-                logger.debug("📏 Full edit prompt length: \(editPrompt.count) characters")
-                
-                // Direct API call for image editing
-                let host = configService.getOpenAIHost()
-                let port = configService.getOpenAIPort()
-                let scheme = configService.getOpenAIScheme()
-                
-                let url = URL(string: "\(scheme)://\(host):\(port)/v1/images/edits")!
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-                request.timeoutInterval = 120  // 2 minute timeout
-                
-                // Create multipart form data
-                let boundary = UUID().uuidString
-                request.addValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-                
-                var body = Data()
-                
-                // Add model field
-                body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
-                body.append("gpt-image-1\r\n".data(using: .utf8)!)  // Use gpt-image-1 for image editing
-                
-                // Add prompt field
-                body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
-                body.append("\(editPrompt)\r\n".data(using: .utf8)!)
-                
-                // Add size field
-                body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"size\"\r\n\r\n".data(using: .utf8)!)
-                body.append("1536x1024\r\n".data(using: .utf8)!)  // High quality for party souvenirs
-                
-                // Add image field
-                body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"image\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
-                body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
-                body.append(jpegData)
-                body.append("\r\n".data(using: .utf8)!)
-                
-                logger.debug("📦 Image field added to multipart form data")
-                logger.debug("📦 Image data size in form: \(jpegData.count) bytes")
-                
-                // Close boundary
-                body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-                
-                logger.debug("📦 Final multipart form data size: \(body.count) bytes")
-                logger.debug("📦 Multipart boundary: \(boundary)")
-                
-                request.httpBody = body
-                
-                logger.info("📡 Sending request to OpenAI API...")
-                logger.debug("🌐 API URL: \(url.absoluteString)")
-                logger.debug("📦 Request body size: \(body.count) bytes")
-                
-                logger.debug("📡 Sending image edit request to OpenAI...")
-                
-                let (data, response): (Data, URLResponse)
-                do {
-                    logger.info("⏳ Waiting for OpenAI response...")
-                    (data, response) = try await URLSession.shared.data(for: request)
-                    logger.info("✅ Received response from OpenAI")
-                } catch {
-                    logger.error("❌ Network request failed")
-                    if let urlError = error as? URLError {
-                        switch urlError.code {
-                        case .timedOut:
-                            logger.error("❌ Request timed out after 2 minutes")
-                        case .notConnectedToInternet:
-                            logger.error("❌ No internet connection")
-                        case .networkConnectionLost:
-                            logger.error("❌ Network connection lost")
-                        case .cannotFindHost:
-                            logger.error("❌ Cannot find host: \(host)")
-                        default:
-                            logger.error("❌ URLError: \(urlError.localizedDescription)")
-                        }
-                    } else {
-                        logger.error("❌ Network error: \(error.localizedDescription)")
-                    }
-                    throw error
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    logger.error("❌ Invalid response type from OpenAI API")
-                    throw OpenAIServiceError.invalidResponse
-                }
-                
-                logger.debug("📡 Response status code: \(httpResponse.statusCode)")
-                
-                if httpResponse.statusCode != 200 {
-                    logger.error("❌ OpenAI API returned error status: \(httpResponse.statusCode)")
-                    if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        logger.error("❌ API Error: \(errorData)")
-                    }
-                    logger.error("❌ HTTP Status Code: \(httpResponse.statusCode)")
-                    logger.error("❌ Response data: \(String(data: data, encoding: .utf8) ?? "Unable to decode response")")
-                    throw OpenAIServiceError.invalidResponse
-                }
-                
-                logger.info("✅ API request successful, processing response...")
-                
-                // Parse response - gpt-image-1 always returns b64_json
-                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let dataArray = json["data"] as? [[String: Any]],
-                      let firstItem = dataArray.first,
-                      let b64Json = firstItem["b64_json"] as? String else {
-                    logger.error("❌ Failed to parse JSON response")
-                    if let responseString = String(data: data, encoding: .utf8) {
-                        logger.debug("📡 Response was: \(responseString.prefix(200))...")
-                    }
-                    throw OpenAIServiceError.invalidResponseFormat
-                }
-                
-                logger.info("⏳ Converting base64 image data...")
-                logger.debug("✅ Successfully parsed API response, got base64 image data")
-                
-                // Decode base64 image
-                guard let imageData = Data(base64Encoded: b64Json),
-                      let editedImage = NSImage(data: imageData) else {
-                    logger.error("❌ Failed to decode base64 image data")
-                    throw OpenAIServiceError.imageCreationFailed
-                }
-                
-                logger.info("🎉 Successfully created themed image!")
-                logger.debug("📊 Generated image size: \(editedImage.size.width) x \(editedImage.size.height)")
-                logger.info("✅ AI image generation completed successfully for theme: \(theme.name)")
-                logger.info("🏁 === PROCESSING COMPLETE ===")
-                return editedImage
-                
-            } catch {
-                lastError = error
-                logger.error("❌ AI generation attempt \(attempt) failed: \(error.localizedDescription)")
-                
-                // Log specific error types for better debugging
-                if let urlError = error as? URLError {
-                    switch urlError.code {
-                    case .timedOut:
-                        logger.error("⏰ Request timed out - OpenAI API may be slow")
-                    case .notConnectedToInternet:
-                        logger.error("🌐 No internet connection")
-                    case .networkConnectionLost:
-                        logger.error("📡 Network connection lost")
-                    default:
-                        logger.error("🔗 Network error: \(urlError.localizedDescription)")
-                    }
-                } else if error.localizedDescription.contains("400") {
-                    logger.error("❌ Bad request - check image format or prompt")
-                } else if error.localizedDescription.contains("401") {
-                    logger.error("🔑 Authentication failed - check API key")
-                } else if error.localizedDescription.contains("429") {
-                    logger.error("⏳ Rate limit exceeded - too many requests")
-                } else {
-                    logger.error("❓ Unknown error: \(error.localizedDescription)")
-                }
-                
-                if attempt < maxRetries {
-                    let delay = Double(attempt) * 0.5  // Shorter delays: 0.5s, 1s, 1.5s
-                    logger.info("🔄 Retrying in \(delay) seconds... (attempt \(attempt + 1)/\(maxRetries))")
-                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                } else {
-                    logger.error("💥 All attempts exhausted - giving up")
-                }
+        do {
+            logger.info("⏳ Preparing image for upload...")
+            
+            // Convert NSImage to JPEG data for the API
+            guard let jpegData = try prepareImageData(from: image) else {
+                throw OpenAIServiceError.imageConversionFailed
             }
+            
+            logger.debug("📸 Image data prepared: \(jpegData.count) bytes")
+            
+            // Create the theme-specific prompt
+            let editPrompt = createEditPrompt(for: theme)
+            logger.debug("📝 Edit prompt: \(editPrompt)")
+            
+            // Create multipart form data
+            let formData = try createMultipartFormData(
+                imageData: jpegData,
+                prompt: editPrompt,
+                model: "gpt-image-1",
+                size: "1536x1024"
+            )
+            
+            logger.debug("📦 Multipart form data prepared: \(formData.body.count) bytes")
+            
+            // Build API URL
+            let url = try buildAPIURL()
+            logger.debug("🌐 API URL: \(url.absoluteString)")
+            
+            // Create headers
+            let headers = [
+                "Authorization": "Bearer \(apiKey)",
+                "Content-Type": "multipart/form-data; boundary=\(formData.boundary)"
+            ]
+            
+            // Create network request
+            let request = NetworkRequest(
+                url: url,
+                method: .POST,
+                headers: headers,
+                body: formData.body,
+                timeout: 120.0 // 2 minute timeout for image generation
+            )
+            
+            logger.info("📡 Sending request to OpenAI API...")
+            
+            // Use NetworkService with retry logic
+            let response = try await networkService.performRequest(
+                request,
+                retryConfig: createRetryConfig()
+            )
+            
+            logger.info("✅ API request successful, processing response...")
+            
+            // Parse and convert response to NSImage
+            let editedImage = try parseImageResponse(response.data)
+            
+            logger.info("🎉 Successfully created themed image!")
+            logger.debug("📊 Generated image size: \(editedImage.size.width) x \(editedImage.size.height)")
+            logger.info("✅ AI image generation completed successfully for theme: \(theme.name)")
+            logger.info("🏁 === PROCESSING COMPLETE ===")
+            
+            return editedImage
+            
+        } catch let error as NetworkError {
+            logger.error("❌ Network error: \(error.localizedDescription)")
+            throw mapNetworkError(error)
+        } catch {
+            logger.error("❌ AI generation failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
+    // MARK: - Private Methods
+    
+    private func prepareImageData(from image: NSImage) throws -> Data? {
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
+            return nil
         }
         
-        logger.error("❌ All \(maxRetries) attempts failed. Last error: \(lastError?.localizedDescription ?? "Unknown")")
-        throw lastError ?? OpenAIServiceError.maxRetriesExceeded
+        // Check if image is within gpt-image-1 limits (50MB)
+        let maxSize = 50 * 1024 * 1024  // 50MB in bytes
+        if jpegData.count > maxSize {
+            logger.error("❌ Image too large: \(jpegData.count) bytes (max: \(maxSize) bytes)")
+            return nil
+        }
+        
+        // Verify image data is valid
+        if let testImage = NSImage(data: jpegData) {
+            logger.debug("✅ JPEG data is valid, can create NSImage from it")
+            logger.debug("📊 Test image size: \(testImage.size.width) x \(testImage.size.height)")
+        } else {
+            logger.error("❌ JPEG data is invalid, cannot create NSImage")
+            return nil
+        }
+        
+        return jpegData
+    }
+    
+    private func createEditPrompt(for theme: PhotoTheme) -> String {
+        return """
+        Transform this photo into \(theme.name) style while preserving the exact same people, faces, poses, and composition from the original photo. \(theme.prompt)
+        
+        IMPORTANT: Keep all the people exactly as they appear in the original photo - same faces, same expressions, same positioning. Only change the art style, not the people or their appearance.
+        """
+    }
+    
+    private func createMultipartFormData(
+        imageData: Data,
+        prompt: String,
+        model: String,
+        size: String
+    ) throws -> (body: Data, boundary: String) {
+        let boundary = UUID().uuidString
+        var body = Data()
+        
+        // Add model field
+        body.append(multipartField(name: "model", value: model, boundary: boundary))
+        
+        // Add prompt field
+        body.append(multipartField(name: "prompt", value: prompt, boundary: boundary))
+        
+        // Add size field
+        body.append(multipartField(name: "size", value: size, boundary: boundary))
+        
+        // Add image field
+        body.append(multipartFileField(
+            name: "image",
+            filename: "photo.jpg",
+            contentType: "image/jpeg",
+            data: imageData,
+            boundary: boundary
+        ))
+        
+        // Close boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        return (body, boundary)
+    }
+    
+    private func multipartField(name: String, value: String, boundary: String) -> Data {
+        var fieldData = Data()
+        fieldData.append("--\(boundary)\r\n".data(using: .utf8)!)
+        fieldData.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+        fieldData.append("\(value)\r\n".data(using: .utf8)!)
+        return fieldData
+    }
+    
+    private func multipartFileField(
+        name: String,
+        filename: String,
+        contentType: String,
+        data: Data,
+        boundary: String
+    ) -> Data {
+        var fieldData = Data()
+        fieldData.append("--\(boundary)\r\n".data(using: .utf8)!)
+        fieldData.append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        fieldData.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
+        fieldData.append(data)
+        fieldData.append("\r\n".data(using: .utf8)!)
+        return fieldData
+    }
+    
+    private func buildAPIURL() throws -> URL {
+        let host = configService.getOpenAIHost()
+        let port = configService.getOpenAIPort()
+        let scheme = configService.getOpenAIScheme()
+        
+        guard let url = URL(string: "\(scheme)://\(host):\(port)/v1/images/edits") else {
+            throw OpenAIServiceError.invalidURL("\(scheme)://\(host):\(port)/v1/images/edits")
+        }
+        
+        return url
+    }
+    
+    private func createRetryConfig() -> RetryConfiguration {
+        return RetryConfiguration(
+            maxRetries: 3,
+            baseDelay: 1.0,
+            maxDelay: 10.0,
+            backoffMultiplier: 2.0,
+            retryableStatusCodes: [408, 429, 500, 502, 503, 504]
+        )
+    }
+    
+    private func parseImageResponse(_ data: Data) throws -> NSImage {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dataArray = json["data"] as? [[String: Any]],
+              let firstItem = dataArray.first,
+              let b64Json = firstItem["b64_json"] as? String else {
+            logger.error("❌ Failed to parse JSON response")
+            if let responseString = String(data: data, encoding: .utf8) {
+                logger.debug("📡 Response was: \(responseString.prefix(200))...")
+            }
+            throw OpenAIServiceError.invalidResponseFormat
+        }
+        
+        logger.info("⏳ Converting base64 image data...")
+        logger.debug("✅ Successfully parsed API response, got base64 image data")
+        
+        // Decode base64 image
+        guard let imageData = Data(base64Encoded: b64Json),
+              let editedImage = NSImage(data: imageData) else {
+            logger.error("❌ Failed to decode base64 image data")
+            throw OpenAIServiceError.imageCreationFailed
+        }
+        
+        return editedImage
+    }
+    
+    private func mapNetworkError(_ error: NetworkError) -> OpenAIServiceError {
+        switch error {
+        case .statusCode(let code, _):
+            switch code {
+            case 400:
+                logger.error("❌ Bad request - check image format or prompt")
+                return .invalidResponse
+            case 401:
+                logger.error("🔑 Authentication failed - check API key")
+                return .serviceNotConfigured
+            case 429:
+                logger.error("⏳ Rate limit exceeded - too many requests")
+                return .maxRetriesExceeded
+            default:
+                logger.error("❌ HTTP Status Code: \(code)")
+                return .invalidResponse
+            }
+        case .timeout:
+            logger.error("⏰ Request timed out - OpenAI API may be slow")
+            return .generationFailed(error)
+        case .networkUnavailable:
+            logger.error("🌐 No internet connection")
+            return .generationFailed(error)
+        case .retryExhausted(let lastError):
+            logger.error("💥 All retry attempts exhausted")
+            return .generationFailed(lastError)
+        default:
+            logger.error("❓ Unknown network error: \(error.localizedDescription)")
+            return .generationFailed(error)
+        }
     }
 }
 
@@ -307,6 +337,7 @@ enum OpenAIServiceError: Error, LocalizedError {
     case maxRetriesExceeded
     case invalidResponseFormat
     case imageCreationFailed
+    case invalidURL(String)
     
     var errorDescription: String? {
         switch self {
@@ -324,6 +355,8 @@ enum OpenAIServiceError: Error, LocalizedError {
             return "Invalid response format from OpenAI API"
         case .imageCreationFailed:
             return "Failed to create image from response data"
+        case .invalidURL(let url):
+            return "Invalid URL: \(url)"
         }
     }
 } 

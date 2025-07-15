@@ -33,18 +33,18 @@ final class ImageProcessingService: ObservableObject, ImageProcessingServiceProt
     func saveOriginalImage(_ image: NSImage, timestamp: TimeInterval) async throws -> URL {
         logger.info("Saving original image with timestamp: \(timestamp)")
         
-        let filename = String(format: "original_%.0f.png", timestamp)
+        let filename = String(format: "original_%.0f.jpg", timestamp)
         let fileURL = boothDirectory.appendingPathComponent(filename)
         
         guard let tiffData = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            logger.error("Failed to convert original image to PNG")
+              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+            logger.error("Failed to convert original image to JPEG")
             throw ImageProcessingError.imageConversionFailed
         }
         
         do {
-            try pngData.write(to: fileURL)
+            try jpegData.write(to: fileURL)
             logger.info("Original image saved to: \(fileURL.path)")
             return fileURL
         } catch {
@@ -62,18 +62,18 @@ final class ImageProcessingService: ObservableObject, ImageProcessingServiceProt
     func saveThemedImage(_ image: NSImage, timestamp: TimeInterval) async throws -> URL {
         logger.info("Saving themed image with timestamp: \(timestamp)")
         
-        let filename = String(format: "themed_%.0f.png", timestamp)
+        let filename = String(format: "themed_%.0f.jpg", timestamp)
         let fileURL = boothDirectory.appendingPathComponent(filename)
         
         guard let tiffData = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            logger.error("Failed to convert themed image to PNG")
+              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+            logger.error("Failed to convert themed image to JPEG")
             throw ImageProcessingError.imageConversionFailed
         }
         
         do {
-            try pngData.write(to: fileURL)
+            try jpegData.write(to: fileURL)
             logger.info("Themed image saved to: \(fileURL.path)")
             return fileURL
         } catch {
