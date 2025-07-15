@@ -153,6 +153,12 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
         }
         
         imageProcessingViewModel.selectTheme(theme)
+        
+        // If minimum display period has elapsed, return to live camera view
+        if !uiStateViewModel.isInMinimumDisplayPeriod && uiStateViewModel.isReadyForNextPhoto {
+            logger.info("Theme selected and minimum display period elapsed - returning to live camera view")
+            NotificationCenter.default.post(name: .returnToLiveCamera, object: nil)
+        }
     }
     
     /// Refresh available cameras

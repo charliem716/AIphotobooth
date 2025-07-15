@@ -3,6 +3,7 @@ import os.log
 
 struct CacheManagementView: View {
     @ObservedObject var cacheService: CacheManagementService
+    @Environment(\.dismiss) private var dismiss
     @State private var showingCleanupAlert = false
     @State private var showingCleanupProgress = false
     @State private var selectedRetentionDays = 7
@@ -169,6 +170,13 @@ struct CacheManagementView: View {
             .padding()
         }
         .navigationTitle("Cache Management")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") {
+                    dismiss()
+                }
+            }
+        }
         .alert("Clean Cache", isPresented: $showingCleanupAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Clean", role: .destructive) {

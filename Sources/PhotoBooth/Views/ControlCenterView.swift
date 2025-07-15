@@ -414,52 +414,76 @@ struct ControlCenterView: View {
     
     // MARK: - Last Photo Preview
     private var lastPhotoPreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Last Photo")
                 .font(.headline)
                 .fontWeight(.semibold)
             
-            HStack(spacing: 12) {
+            VStack(spacing: 16) {
                 // Original photo
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     if let originalImage = viewModel.lastCapturedImage {
                         Image(nsImage: originalImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 80, height: 80)
-                            .cornerRadius(8)
+                            .frame(maxWidth: .infinity, maxHeight: 140)
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                     } else {
                         Rectangle()
                             .fill(Color.gray.opacity(0.3))
-                            .frame(width: 80, height: 80)
-                            .cornerRadius(8)
+                            .frame(height: 140)
+                            .cornerRadius(12)
+                            .overlay(
+                                VStack {
+                                    Image(systemName: "photo")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(.secondary)
+                                    Text("No photo yet")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            )
                     }
                     Text("Original")
-                        .font(.caption)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
                 
                 // Themed photo
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     if let themedImage = viewModel.lastThemedImage {
                         Image(nsImage: themedImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 80, height: 80)
-                            .cornerRadius(8)
+                            .frame(maxWidth: .infinity, maxHeight: 140)
+                            .cornerRadius(12)
+                            .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
                     } else {
                         Rectangle()
                             .fill(Color.gray.opacity(0.3))
-                            .frame(width: 80, height: 80)
-                            .cornerRadius(8)
+                            .frame(height: 140)
+                            .cornerRadius(12)
+                            .overlay(
+                                VStack {
+                                    Image(systemName: "wand.and.stars")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(.secondary)
+                                    Text("Processing...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            )
                     }
                     Text("Themed")
-                        .font(.caption)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
             }
         }
-        .padding(16)
+        .padding(20)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(12)
     }
@@ -481,17 +505,8 @@ struct ControlCenterView: View {
             viewModel.selectTheme(theme)
         }
         
-        // If in minimum display period, selecting theme prepares for next photo without returning to live feed
-        if viewModel.isInMinimumDisplayPeriod {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                viewModel.isInMinimumDisplayPeriod = false
-                viewModel.isReadyForNextPhoto = true
-            }
-            // Timer invalidation is handled automatically by modern async patterns
-            
-            // Stay on themed image display - don't reset to live camera
-            // The themed image will remain visible until user takes next photo
-        }
+        // Let the PhotoBoothViewModel handle the minimum display period logic
+        // and return to live camera view appropriately
     }
 }
 

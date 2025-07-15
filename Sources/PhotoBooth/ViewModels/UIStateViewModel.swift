@@ -240,6 +240,9 @@ final class UIStateViewModel: ObservableObject {
         if minimumDisplayTimeRemaining <= 0 {
             logInfo("\(LoggingService.Emoji.success) Minimum display period completed", category: .ui)
             stopMinimumDisplayPeriod()
+            
+            // Automatically return to live camera view after minimum display period
+            NotificationCenter.default.post(name: .returnToLiveCamera, object: nil)
         }
     }
 }

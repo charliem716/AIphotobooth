@@ -134,7 +134,8 @@ class SlideShowViewModel: ObservableObject {
             // Filter and validate files
             let validFiles = files.filter { file in
                 let filename = file.lastPathComponent
-                let isValidPhoto = (filename.hasPrefix("original_") || filename.hasPrefix("themed_")) && filename.hasSuffix(".jpg")
+                let isValidPhoto = (filename.hasPrefix("original_") || filename.hasPrefix("themed_")) && 
+                                  (filename.hasSuffix(".jpg") || filename.hasSuffix(".png"))
                 
                 // Check file size to avoid corrupted files
                 if isValidPhoto {
@@ -351,11 +352,13 @@ class SlideShowViewModel: ObservableObject {
         for file in files {
             let filename = file.lastPathComponent
             
-            if filename.hasPrefix("original_") && filename.hasSuffix(".jpg") {
-                let timestampString = String(filename.dropFirst("original_".count).dropLast(".jpg".count))
+            if filename.hasPrefix("original_") && (filename.hasSuffix(".jpg") || filename.hasSuffix(".png")) {
+                let fileExtension = filename.hasSuffix(".jpg") ? ".jpg" : ".png"
+                let timestampString = String(filename.dropFirst("original_".count).dropLast(fileExtension.count))
                 originalFiles.append((url: file, timestamp: timestampString))
-            } else if filename.hasPrefix("themed_") && filename.hasSuffix(".jpg") {
-                let timestampString = String(filename.dropFirst("themed_".count).dropLast(".jpg".count))
+            } else if filename.hasPrefix("themed_") && (filename.hasSuffix(".jpg") || filename.hasSuffix(".png")) {
+                let fileExtension = filename.hasSuffix(".jpg") ? ".jpg" : ".png"
+                let timestampString = String(filename.dropFirst("themed_".count).dropLast(fileExtension.count))
                 themedFiles.append((url: file, timestamp: timestampString))
             }
         }
