@@ -22,44 +22,12 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
     private var slideShowViewModel: SlideShowViewModel?
     private var slideShowWindowController: SlideShowWindowController?
     
-    // MARK: - Computed Properties for UI Compatibility
-    
-    // Camera properties - delegate to CameraViewModel
-    var isSessionRunning: Bool { cameraViewModel.isSessionRunning }
-    var isCameraConnected: Bool { cameraViewModel.isCameraConnected }
-    var availableCameras: [AVCaptureDevice] { cameraViewModel.availableCameras }
-    var selectedCameraDevice: AVCaptureDevice? { cameraViewModel.selectedCameraDevice }
-    var captureSession: AVCaptureSession? { cameraViewModel.getPreviewLayer()?.session }
-    
-    // UI state properties - delegate to UIStateViewModel
-    var countdown: Int { uiStateViewModel.countdown }
-    var isCountingDown: Bool { uiStateViewModel.isCountingDown }
-    var errorMessage: String? { uiStateViewModel.errorMessage }
-    var showError: Bool { uiStateViewModel.showError }
-    var isReadyForNextPhoto: Bool { 
-        get { uiStateViewModel.isReadyForNextPhoto }
-        set { uiStateViewModel.isReadyForNextPhoto = newValue }
-    }
-    var minimumDisplayTimeRemaining: Int { uiStateViewModel.minimumDisplayTimeRemaining }
-    var isInMinimumDisplayPeriod: Bool { 
-        get { uiStateViewModel.isInMinimumDisplayPeriod }
-        set { uiStateViewModel.isInMinimumDisplayPeriod = newValue }
-    }
-    var minimumDisplayDuration: TimeInterval { uiStateViewModel.minimumDisplayDuration }
-    
-    // Image processing properties - delegate to ImageProcessingViewModel
-    var selectedTheme: PhotoTheme? { 
-        get { imageProcessingViewModel.selectedTheme }
-        set { imageProcessingViewModel.selectedTheme = newValue }
-    }
-    var isProcessing: Bool { imageProcessingViewModel.isProcessing }
-    var lastCapturedImage: NSImage? { imageProcessingViewModel.lastCapturedImage }
-    var lastThemedImage: NSImage? { imageProcessingViewModel.lastThemedImage }
-    var themes: [PhotoTheme] { imageProcessingViewModel.themes }
-    
-    // Configuration status properties
+    // MARK: - Configuration Status Properties
     var isOpenAIConfigured: Bool { serviceCoordinator.openAIService.isConfigured }
     var isThemeConfigurationLoaded: Bool { imageProcessingViewModel.isThemeConfigurationLoaded }
+    
+    // MARK: - Service Access Properties
+    var configurationService: any ConfigurationServiceProtocol { serviceCoordinator.configurationService }
     
     // MARK: - Private Properties
     private let logger = Logger(subsystem: "PhotoBooth", category: "MainCoordinator")
@@ -88,7 +56,7 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
         
         super.init()
         
-        setupViewModelDelegation()
+        setupCombineBindings()
         setupServiceCoordination()
         setupSlideshow()
         
@@ -119,74 +87,7 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
         logger.info("Photo booth system setup completed")
     }
     
-    /// Take a photo with the selected theme
-    func takePhoto() {
-        guard imageProcessingViewModel.selectedTheme != nil else {
-            uiStateViewModel.showError(message: "Please select a theme before taking a photo.")
-            return
-        }
-        
-        guard cameraViewModel.isReadyForCapture else {
-            uiStateViewModel.showError(message: "Camera is not ready. Please check camera connection.")
-            return
-        }
-        
-        guard imageProcessingViewModel.isReadyForProcessing else {
-            uiStateViewModel.showError(message: "Image processing service is not ready. Please check configuration.")
-            return
-        }
-        
-        logger.info("Starting photo capture workflow...")
-        
-        // Start countdown
-        uiStateViewModel.startCountdown(duration: 3)
-    }
-    
-    /// Select a theme for photo processing
-    func selectTheme(_ theme: PhotoTheme) {
-        logger.info("Selecting theme: \(theme.name)")
-        
-        // Auto-close slideshow when theme is selected
-        if isSlideShowActive {
-            logger.info("Theme selected during slideshow - closing slideshow first")
-            stopSlideshow()
-        }
-        
-        imageProcessingViewModel.selectTheme(theme)
-        
-        // If minimum display period has elapsed, return to live camera view
-        if !uiStateViewModel.isInMinimumDisplayPeriod && uiStateViewModel.isReadyForNextPhoto {
-            logger.info("Theme selected and minimum display period elapsed - returning to live camera view")
-            NotificationCenter.default.post(name: .returnToLiveCamera, object: nil)
-        }
-    }
-    
-    /// Refresh available cameras
-    func refreshAvailableCameras() async {
-        await cameraViewModel.refreshAvailableCameras()
-    }
-    
-    /// Select a specific camera device
-    func selectCamera(_ device: AVCaptureDevice) async {
-        await cameraViewModel.selectCamera(device)
-    }
-    
-    /// Show error message to user
-    func showError(message: String) {
-        uiStateViewModel.showError(message: message)
-    }
-    
-    // MARK: - UI Interaction Methods (delegation to specialized ViewModels)
-    
     /// Start the complete photo capture workflow with countdown
-    ///
-    /// This method initiates the photo capture process by:
-    /// 1. Validating that a theme is selected and camera is ready
-    /// 2. Auto-closing any active slideshow
-    /// 3. Starting a 3-second countdown
-    /// 4. Triggering photo capture when countdown completes
-    ///
-    /// - Note: This is the main entry point called by the UI for photo capture
     func startCapture() {
         logger.info("Starting photo capture workflow from PhotoBoothViewModel")
         
@@ -210,56 +111,10 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
         uiStateViewModel.startCountdown(duration: 3)
     }
     
-    /// Find and setup Continuity Camera
-    ///
-    /// This method refreshes the available cameras and attempts to connect
-    /// to a Continuity Camera (iPhone) if available.
-    func findAndSetupContinuityCamera() {
-        logger.info("Finding and setting up Continuity Camera...")
-        Task {
-            await cameraViewModel.refreshAvailableCameras()
-            
-            // Try to auto-select a Continuity Camera if available
-            let cameras = cameraViewModel.availableCameras
-            if let continuityCamera = cameras.first(where: { 
-                $0.deviceType == .continuityCamera || $0.localizedName.contains("iPhone")
-            }) {
-                logger.info("Auto-selecting Continuity Camera: \(continuityCamera.localizedName)")
-                await cameraViewModel.selectCamera(continuityCamera)
-            }
-        }
+    /// Show error message to user
+    func showError(message: String) {
+        uiStateViewModel.showError(message: message)
     }
-    
-    /// Force Continuity Camera connection
-    ///
-    /// This method attempts to force a connection to a Continuity Camera
-    /// by refreshing the camera list and prioritizing iPhone connections.
-    func forceContinuityCameraConnection() {
-        logger.info("Forcing Continuity Camera connection...")
-        Task {
-            await cameraViewModel.forceContinuityCameraConnection()
-            
-            // Check if connection was successful
-            if self.cameraViewModel.isCameraConnected && self.cameraViewModel.selectedCameraDevice != nil {
-                logger.info("✅ Continuity Camera connected: \(self.cameraViewModel.selectedCameraDevice?.localizedName ?? "Unknown")")
-            } else {
-                logger.warning("❌ Continuity Camera connection failed")
-                self.uiStateViewModel.showError(message: "No iPhone detected. Please ensure iPhone is unlocked and nearby.")
-            }
-        }
-    }
-    
-    /// Start minimum display period
-    func startMinimumDisplayPeriod() {
-        uiStateViewModel.startMinimumDisplayPeriod()
-    }
-    
-    /// Stop minimum display period
-    func stopMinimumDisplayPeriod() {
-        uiStateViewModel.stopMinimumDisplayPeriod()
-    }
-    
-
     
     // MARK: - Slideshow Methods (keeping existing functionality)
     
@@ -311,12 +166,8 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
     
     // MARK: - Private Methods
     
-    private func setupViewModelDelegation() {
-        // Set up camera view model delegation
-        cameraViewModel.delegate = self
-        
-        // Set up image processing view model delegation
-        imageProcessingViewModel.delegate = self
+    private func setupCombineBindings() {
+        // Setup Combine-based communication instead of delegates
         
         // Forward specialized ViewModel changes to main ObservableObject
         cameraViewModel.objectWillChange
@@ -336,6 +187,113 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+        
+        // Setup camera capture handling
+        setupCameraCaptureHandling()
+        
+        // Setup image processing handling
+        setupImageProcessingHandling()
+    }
+    
+    private func setupCameraCaptureHandling() {
+        // Listen for camera capture events through publishers
+        cameraViewModel.photoCapturedPublisher
+            .sink { [weak self] image in
+                Task { @MainActor in
+                    await self?.handlePhotoCaptured(image)
+                }
+            }
+            .store(in: &cancellables)
+        
+        cameraViewModel.cameraErrorPublisher
+            .sink { [weak self] error in
+                self?.handleCameraError(error)
+            }
+            .store(in: &cancellables)
+        
+        logger.info("Camera capture handling setup completed")
+    }
+    
+    private func setupImageProcessingHandling() {
+        // Listen for image processing events through publishers
+        imageProcessingViewModel.themeSelectedPublisher
+            .sink { [weak self] theme in
+                self?.handleThemeSelected(theme)
+            }
+            .store(in: &cancellables)
+        
+        imageProcessingViewModel.originalImageSavedPublisher
+            .sink { [weak self] path in
+                self?.handleOriginalImageSaved(path)
+            }
+            .store(in: &cancellables)
+        
+        imageProcessingViewModel.processingCompletedPublisher
+            .sink { [weak self] result in
+                self?.handleSuccessfulProcessing(result)
+            }
+            .store(in: &cancellables)
+        
+        imageProcessingViewModel.processingErrorPublisher
+            .sink { [weak self] error in
+                self?.handleProcessingError(error)
+            }
+            .store(in: &cancellables)
+        
+        logger.info("Image processing handling setup completed")
+    }
+    
+    // MARK: - Event Handlers
+    
+    private func handlePhotoCaptured(_ image: NSImage) async {
+        logger.info("📸 Photo captured, starting processing...")
+        logger.debug("📸 Captured image size: \(image.size.width) x \(image.size.height)")
+        
+        await processPhoto(image)
+    }
+    
+    private func handleCameraError(_ error: CameraViewModelError) {
+        logger.error("❌ Camera error: \(error.localizedDescription)")
+        uiStateViewModel.showError(message: error.localizedDescription)
+    }
+    
+    private func handleThemeSelected(_ theme: PhotoTheme) {
+        logger.info("Theme selected in coordinator: \(theme.name)")
+        
+        // Auto-close slideshow when theme is selected
+        if isSlideShowActive {
+            logger.info("Theme selected during slideshow - closing slideshow first")
+            stopSlideshow()
+        }
+        
+        // If minimum display period has elapsed, return to live camera view
+        if !uiStateViewModel.isInMinimumDisplayPeriod && uiStateViewModel.isReadyForNextPhoto {
+            logger.info("Theme selected and minimum display period elapsed - returning to live camera view")
+            NotificationCenter.default.post(name: .returnToLiveCamera, object: nil)
+        }
+    }
+    
+    private func handleOriginalImageSaved(_ path: URL) {
+        logger.info("Original image saved, notifying projector...")
+        
+        // Notify projector to show original image immediately
+        NotificationCenter.default.post(
+            name: .photoCapture,
+            object: nil,
+            userInfo: [
+                "original": path,
+                "theme": imageProcessingViewModel.selectedTheme?.name ?? "Unknown"
+            ]
+        )
+        
+        // Notify projector that processing has started
+        NotificationCenter.default.post(
+            name: .processingStart,
+            object: nil,
+            userInfo: [
+                "theme": imageProcessingViewModel.selectedTheme?.name ?? "Unknown"
+            ]
+        )
     }
     
     private func setupServiceCoordination() {
@@ -463,66 +421,5 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
         } else {
             return "An unexpected error occurred. Please try again."
         }
-    }
-}
-
-// MARK: - CameraViewModelDelegate
-extension PhotoBoothViewModel: CameraViewModelDelegate {
-    
-    func cameraViewModel(_ viewModel: CameraViewModel, didCapturePhoto image: NSImage) {
-        logger.info("📸 Photo captured, starting processing...")
-        logger.debug("📸 Captured image size: \(image.size.width) x \(image.size.height)")
-        
-        Task {
-            await processPhoto(image)
-        }
-    }
-    
-    func cameraViewModel(_ viewModel: CameraViewModel, didFailWithError error: CameraViewModelError) {
-        logger.error("❌ Camera error: \(error.localizedDescription)")
-        uiStateViewModel.showError(message: error.localizedDescription)
-    }
-}
-
-// MARK: - ImageProcessingViewModelDelegate
-extension PhotoBoothViewModel: ImageProcessingViewModelDelegate {
-    
-    func imageProcessingViewModel(_ viewModel: ImageProcessingViewModel, didSelectTheme theme: PhotoTheme) {
-        logger.info("Theme selected in coordinator: \(theme.name)")
-        // Theme selection is already handled by the ImageProcessingViewModel
-    }
-    
-    func imageProcessingViewModel(_ viewModel: ImageProcessingViewModel, didSaveOriginalImage path: URL) {
-        logger.info("Original image saved, notifying projector...")
-        
-        // Notify projector to show original image immediately
-        NotificationCenter.default.post(
-            name: .photoCapture,
-            object: nil,
-            userInfo: [
-                "original": path,
-                "theme": viewModel.selectedTheme?.name ?? "Unknown"
-            ]
-        )
-        
-        // Notify projector that processing has started
-        NotificationCenter.default.post(
-            name: .processingStart,
-            object: nil,
-            userInfo: [
-                "theme": viewModel.selectedTheme?.name ?? "Unknown"
-            ]
-        )
-    }
-    
-    func imageProcessingViewModel(_ viewModel: ImageProcessingViewModel, didCompleteProcessing result: ImageProcessingResult) {
-        logger.info("✅ Image processing completed successfully!")
-        logger.debug("✅ Result: Original=\(result.originalPath.lastPathComponent), Themed=\(result.themedPath.lastPathComponent)")
-        handleSuccessfulProcessing(result)
-    }
-    
-    func imageProcessingViewModel(_ viewModel: ImageProcessingViewModel, didFailWithError error: ImageProcessingViewModelError) {
-        logger.error("❌ Image processing failed: \(error.localizedDescription)")
-        handleProcessingError(error)
     }
 } 

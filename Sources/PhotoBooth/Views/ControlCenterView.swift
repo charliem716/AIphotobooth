@@ -55,7 +55,7 @@ struct ControlCenterView: View {
         }
         .background(Color(NSColor.windowBackgroundColor))
         .sheet(isPresented: $showingSettings) {
-            SettingsView()
+            SettingsView(configurationService: viewModel.configurationService as! ConfigurationService)
                 .environmentObject(projectorManager)
         }
     }
@@ -73,60 +73,55 @@ struct ControlCenterView: View {
             HStack(spacing: 12) {
                 // Camera selection dropdown
                 Menu {
-                    ForEach(viewModel.availableCameras, id: \.uniqueID) { camera in
+                    ForEach(viewModel.cameraViewModel.availableCameras, id: \.uniqueID) { camera in
                         Button(action: {
                             Task {
-                                await viewModel.selectCamera(camera)
+                                await viewModel.cameraViewModel.selectCamera(camera)
                             }
                         }) {
                             HStack {
                                 Text(camera.localizedName)
                                 if camera.deviceType == .continuityCamera {
                                     Image(systemName: "iphone")
-                                } else {
-                                    Image(systemName: "camera")
-                                }
-                                
-                                if viewModel.selectedCameraDevice?.uniqueID == camera.uniqueID {
-                                    Image(systemName: "checkmark")
                                         .foregroundColor(.blue)
+                                }
+                                if camera == viewModel.cameraViewModel.selectedCameraDevice {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.green)
                                 }
                             }
                         }
                     }
-                    
-                    Divider()
-                    
-                    Button(action: {
-                        logInfo("\(LoggingService.Emoji.camera) Manual camera refresh requested", category: .camera)
-                        Task {
-                            await viewModel.refreshAvailableCameras()
-                        }
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                            Text("Refresh Cameras")
-                        }
-                    }
-                    
-                    Button(action: {
-                        logInfo("\(LoggingService.Emoji.camera) Force Continuity Camera connection requested", category: .camera)
-                        viewModel.forceContinuityCameraConnection()
-                    }) {
-                        HStack {
-                            Image(systemName: "iphone")
-                            Text("Connect iPhone")
-                        }
-                    }
                 } label: {
                     HStack {
-                        Image(systemName: "camera")
-                        Text(viewModel.selectedCameraDevice?.localizedName ?? "Select Camera")
-                            .lineLimit(1)
+                        Image(systemName: "video")
+                            .foregroundColor(.blue)
+                        Text(viewModel.cameraViewModel.selectedCameraDevice?.localizedName ?? "No camera selected")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .foregroundColor(.secondary)
                     }
-                    .font(.title2)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
                 }
-                .help("Select Camera")
+                
+                // Refresh camera button
+                Button("↻ Refresh Cameras") {
+                    Task {
+                        await viewModel.cameraViewModel.refreshAvailableCameras()
+                    }
+                }
+                .buttonStyle(.bordered)
+                
+                // Force continuity camera connection (consolidated)
+                Button("📱 Force iPhone Connection") {
+                    Task {
+                        await viewModel.cameraViewModel.forceContinuityCameraConnection()
+                    }
+                }
                 .buttonStyle(.bordered)
                 
                 // Settings button
@@ -159,11 +154,11 @@ struct ControlCenterView: View {
                 let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: columnCount)
                 
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(viewModel.themes, id: \.id) { theme in
+                    ForEach(viewModel.imageProcessingViewModel.themes, id: \.id) { theme in
                         ThemeButton(
                             theme: theme,
-                            isSelected: viewModel.selectedTheme?.id == theme.id,
-                            isEnabled: viewModel.isReadyForNextPhoto && !viewModel.isProcessing,
+                            isSelected: viewModel.imageProcessingViewModel.selectedTheme?.id == theme.id,
+                            isEnabled: viewModel.uiStateViewModel.isReadyForNextPhoto && !viewModel.imageProcessingViewModel.isProcessing,
                             action: {
                                 selectTheme(theme)
                             }
@@ -367,9 +362,9 @@ struct ControlCenterView: View {
                 .font(.headline)
                 .fontWeight(.semibold)
             
-            VStack(alignment: .leading, spacing: 8) {
-                StatusRow(label: "Camera", value: viewModel.isCameraConnected ? "Connected" : "Disconnected", 
-                         color: viewModel.isCameraConnected ? .green : .red)
+                        VStack(alignment: .leading, spacing: 8) {
+                StatusRow(label: "Camera", value: viewModel.cameraViewModel.isCameraConnected ? "Connected" : "Disconnected",
+                         color: viewModel.cameraViewModel.isCameraConnected ? .green : .red)
                 
                 StatusRow(label: "Projector", value: projectorManager.isProjectorWindowVisible ? "Active" : "Hidden",
                          color: projectorManager.isProjectorWindowVisible ? .green : .gray)
@@ -377,14 +372,14 @@ struct ControlCenterView: View {
                 StatusRow(label: "OpenAI", value: viewModel.isOpenAIConfigured ? "Configured" : "Not Configured",
                          color: viewModel.isOpenAIConfigured ? .green : .red)
                 
-                StatusRow(label: "Themes", value: viewModel.isThemeConfigurationLoaded ? "\(viewModel.themes.count) Available" : "Loading...",
+                StatusRow(label: "Themes", value: viewModel.isThemeConfigurationLoaded ? "\(viewModel.imageProcessingViewModel.themes.count) Available" : "Loading...",
                          color: viewModel.isThemeConfigurationLoaded ? .green : .orange)
                 
                 StatusRow(label: "Ready", value: canTakePhoto ? "Yes" : "Not Ready",
                          color: canTakePhoto ? .green : .orange)
                 
                 // Add processing status row
-                if viewModel.isProcessing {
+                if viewModel.imageProcessingViewModel.isProcessing {
                     let processingStatus = viewModel.imageProcessingViewModel.getProcessingStatusSummary()
                     StatusRow(label: "Processing", value: processingStatus.statusText,
                              color: .blue)
@@ -401,8 +396,8 @@ struct ControlCenterView: View {
                     }
                 }
                 
-                if viewModel.isInMinimumDisplayPeriod {
-                    StatusRow(label: "Display Timer", value: "\(viewModel.minimumDisplayTimeRemaining)s",
+                if viewModel.uiStateViewModel.isInMinimumDisplayPeriod {
+                    StatusRow(label: "Display Timer", value: "\(viewModel.uiStateViewModel.minimumDisplayTimeRemaining)s",
                              color: .blue)
                 }
             }
@@ -422,7 +417,7 @@ struct ControlCenterView: View {
             VStack(spacing: 16) {
                 // Original photo
                 VStack(spacing: 8) {
-                    if let originalImage = viewModel.lastCapturedImage {
+                    if let originalImage = viewModel.imageProcessingViewModel.lastCapturedImage {
                         Image(nsImage: originalImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -453,7 +448,7 @@ struct ControlCenterView: View {
                 
                 // Themed photo
                 VStack(spacing: 8) {
-                    if let themedImage = viewModel.lastThemedImage {
+                    if let themedImage = viewModel.imageProcessingViewModel.lastThemedImage {
                         Image(nsImage: themedImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -490,11 +485,11 @@ struct ControlCenterView: View {
     
     // MARK: - Helper Properties
     private var canTakePhoto: Bool {
-        viewModel.isCameraConnected && 
-        viewModel.selectedTheme != nil && 
-        viewModel.isReadyForNextPhoto && 
-        !viewModel.isCountingDown && 
-        !viewModel.isProcessing &&
+        viewModel.cameraViewModel.isCameraConnected && 
+        viewModel.imageProcessingViewModel.selectedTheme != nil && 
+        viewModel.uiStateViewModel.isReadyForNextPhoto && 
+        !viewModel.uiStateViewModel.isCountingDown && 
+        !viewModel.imageProcessingViewModel.isProcessing &&
         viewModel.isThemeConfigurationLoaded &&
         viewModel.isOpenAIConfigured
     }
@@ -502,7 +497,7 @@ struct ControlCenterView: View {
     // MARK: - Actions
     private func selectTheme(_ theme: PhotoTheme) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            viewModel.selectTheme(theme)
+            viewModel.imageProcessingViewModel.selectTheme(theme)
         }
         
         // Let the PhotoBoothViewModel handle the minimum display period logic

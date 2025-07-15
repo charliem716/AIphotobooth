@@ -19,7 +19,20 @@ protocol ConfigurationServiceProtocol: ObservableObject {
     func getOpenAIHost() -> String
     func getOpenAIPort() -> Int
     func getOpenAIScheme() -> String
+    func getImageQuality() -> String
     func validateConfiguration()
+    func validateKeychainCredentials()
+    
+    // Keychain Management
+    func storeSecureCredential(_ credential: String, forKey key: KeychainCredentialStore.CredentialKey) -> Bool
+    func deleteSecureCredential(forKey key: KeychainCredentialStore.CredentialKey) -> Bool
+    func getCredentialStatus() -> [KeychainCredentialStore.CredentialKey: KeychainCredentialStore.CredentialStatus]
+    func clearAllCredentials() -> Bool
+    func performManualMigration() -> Int
+    
+    // Session Management
+    func getSessionCacheStatus() -> [KeychainCredentialStore.CredentialKey: Bool]
+    func isKeychainSessionActive() -> Bool
 }
 
 // MARK: - OpenAI Service Protocol
@@ -100,6 +113,7 @@ protocol CacheManagementServiceProtocol: ObservableObject {
 @MainActor
 protocol PhotoBoothServiceCoordinatorProtocol: ObservableObject {
     var configurationService: any ConfigurationServiceProtocol { get }
+    var networkService: any NetworkServiceProtocol { get }
     var openAIService: any OpenAIServiceProtocol { get }
     var cameraService: any CameraServiceProtocol { get }
     var imageProcessingService: any ImageProcessingServiceProtocol { get }

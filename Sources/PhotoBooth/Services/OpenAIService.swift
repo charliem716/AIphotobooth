@@ -82,6 +82,7 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
         logger.info("📝 Using prompt: \(theme.prompt)")
         logger.info("🤖 Using OpenAI model: gpt-image-1")
         logger.info("📐 Output size: 1536x1024 (high quality for party souvenirs)")
+        logger.info("🔧 Image quality: \(self.configService.getImageQuality())")
         
         do {
             logger.info("⏳ Preparing image for upload...")
@@ -102,7 +103,8 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
                 imageData: jpegData,
                 prompt: editPrompt,
                 model: "gpt-image-1",
-                size: "1536x1024"
+                size: "1536x1024",
+                quality: self.configService.getImageQuality()
             )
             
             logger.debug("📦 Multipart form data prepared: \(formData.body.count) bytes")
@@ -195,7 +197,8 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
         imageData: Data,
         prompt: String,
         model: String,
-        size: String
+        size: String,
+        quality: String
     ) throws -> (body: Data, boundary: String) {
         let boundary = UUID().uuidString
         var body = Data()
@@ -208,6 +211,9 @@ final class OpenAIService: ObservableObject, OpenAIServiceProtocol {
         
         // Add size field
         body.append(multipartField(name: "size", value: size, boundary: boundary))
+        
+        // Add quality field
+        body.append(multipartField(name: "quality", value: quality, boundary: boundary))
         
         // Add image field
         body.append(multipartFileField(

@@ -7,10 +7,19 @@ struct SettingsView: View {
     @AppStorage("cacheRetentionDays") private var cacheRetentionDays = 7
     @AppStorage("singleDisplayMode") private var singleDisplayMode = false
     @AppStorage("autoShowProjector") private var autoShowProjector = true
+    @AppStorage("imageQuality") private var imageQuality = "high"
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var projectorManager: ProjectorWindowManager
     @StateObject private var cacheService = CacheManagementService()
     @State private var showingCacheManagement = false
+    
+    // Configuration service dependency
+    private let configurationService: ConfigurationService
+    
+    // MARK: - Initialization
+    init(configurationService: ConfigurationService = ConfigurationService.shared) {
+        self.configurationService = configurationService
+    }
     
     private var cacheStats: CacheStatistics {
         cacheService.cacheStatistics
@@ -217,17 +226,29 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("OpenAI Status:")
-                        Text(ProcessInfo.processInfo.environment["OPENAI_KEY"] != nil ? "Configured ✓" : "Not configured ✗")
-                            .foregroundColor(ProcessInfo.processInfo.environment["OPENAI_KEY"] != nil ? .green : .red)
+                        Text(configurationService.isOpenAIConfigured ? "Configured ✓" : "Not configured ✗")
+                            .foregroundColor(configurationService.isOpenAIConfigured ? .green : .red)
                     }
                     
                     HStack {
                         Text("Twilio Status:")
-                        Text(isTwilioConfigured() ? "Configured ✓" : "Not configured ✗")
-                            .foregroundColor(isTwilioConfigured() ? .green : .red)
+                        Text(configurationService.isTwilioConfigured ? "Configured ✓" : "Not configured ✗")
+                            .foregroundColor(configurationService.isTwilioConfigured ? .green : .red)
                     }
                     
-                    Text("Note: Edit .env file to configure API credentials")
+                    HStack {
+                        Text("Image Quality:")
+                        Spacer()
+                        Picker("Image Quality", selection: $imageQuality) {
+                            Text("Low (Fast)").tag("low")
+                            Text("Medium (Balanced)").tag("medium")
+                            Text("High (Detailed)").tag("high")
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                        .frame(width: 180)
+                    }
+                    
+                    Text("Note: API credentials are stored securely in Keychain")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.top, 4)
@@ -267,13 +288,6 @@ struct SettingsView: View {
         .sheet(isPresented: $showingCacheManagement) {
             CacheManagementView(cacheService: cacheService)
         }
-    }
-    
-    private func isTwilioConfigured() -> Bool {
-        let env = ProcessInfo.processInfo.environment
-        return env["TWILIO_SID"] != nil && 
-               env["TWILIO_TOKEN"] != nil && 
-               env["TWILIO_FROM"] != nil
     }
     
     private func clearCache() {
