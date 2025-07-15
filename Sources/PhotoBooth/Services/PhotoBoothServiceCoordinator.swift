@@ -11,6 +11,7 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
     let openAIService: any OpenAIServiceProtocol
     let cameraService: any CameraServiceProtocol  
     let imageProcessingService: any ImageProcessingServiceProtocol
+    let cacheManagementService: any CacheManagementServiceProtocol
     let themeConfigurationService: ThemeConfigurationService
     
     // MARK: - Published Properties
@@ -31,6 +32,7 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
             openAIService: OpenAIService(),
             cameraService: CameraService(),
             imageProcessingService: ImageProcessingService(),
+            cacheManagementService: CacheManagementService(),
             themeConfigurationService: ThemeConfigurationService()
         )
     }
@@ -41,12 +43,14 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
         openAIService: any OpenAIServiceProtocol,
         cameraService: any CameraServiceProtocol,
         imageProcessingService: any ImageProcessingServiceProtocol,
+        cacheManagementService: any CacheManagementServiceProtocol,
         themeConfigurationService: ThemeConfigurationService
     ) {
         self.configurationService = configurationService
         self.openAIService = openAIService
         self.cameraService = cameraService
         self.imageProcessingService = imageProcessingService
+        self.cacheManagementService = cacheManagementService
         self.themeConfigurationService = themeConfigurationService
         
         setupServiceObservation()
@@ -69,18 +73,23 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
         await cameraService.setupCamera()
         initializationProgress = 0.5
         
-        // Step 3: Load theme configuration (62.5%)
-        logger.info("Step 3/5: Loading theme configuration...")
+        // Step 3: Load theme configuration (50%)
+        logger.info("Step 3/6: Loading theme configuration...")
         await themeConfigurationService.loadConfiguration()
+        initializationProgress = 0.5
+        
+        // Step 4: Initialize cache management service (62.5%)
+        logger.info("Step 4/6: Initializing cache management service...")
+        await cacheManagementService.refreshCacheStatistics()
         initializationProgress = 0.625
         
-        // Step 4: Verify OpenAI service (75%)
-        logger.info("Step 4/5: Verifying OpenAI service...")
+        // Step 5: Verify OpenAI service (75%)
+        logger.info("Step 5/6: Verifying OpenAI service...")
         // OpenAI service is automatically configured via configuration service
         initializationProgress = 0.75
         
-        // Step 5: Complete initialization (100%)
-        logger.info("Step 5/5: Finalizing initialization...")
+        // Step 6: Complete initialization (100%)
+        logger.info("Step 6/6: Finalizing initialization...")
         await validateServicesSetup()
         initializationProgress = 1.0
         
@@ -94,10 +103,11 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
         let cameraReady = cameraService.authorizationStatus == .authorized
         let openAIReady = openAIService.isConfigured
         let themesReady = themeConfigurationService.isConfigured
+        let cacheReady = true // Cache management service is always ready
         
-        logger.debug("Service validation - Config: \(configValid), Camera: \(cameraReady), OpenAI: \(openAIReady), Themes: \(themesReady)")
+        logger.debug("Service validation - Config: \(configValid), Camera: \(cameraReady), OpenAI: \(openAIReady), Themes: \(themesReady), Cache: \(cacheReady)")
         
-        return configValid && cameraReady && openAIReady && themesReady
+        return configValid && cameraReady && openAIReady && themesReady && cacheReady
     }
     
     /// Get service status summary

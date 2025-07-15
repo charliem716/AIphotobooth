@@ -1,0 +1,240 @@
+# SwiftLint Configuration for PhotoBooth
+# https://github.com/realm/SwiftLint
+
+# Paths to include during linting
+included:
+  - Sources
+  - PhotoBooth
+  - Tests
+
+# Paths to exclude from linting
+excluded:
+  - .build
+  - .swiftpm
+  - DerivedData
+  - Pods
+  - Scripts
+  - Package.resolved
+  - Package.swift
+
+# Rules that are enabled by default but we want to disable
+disabled_rules:
+  - todo # We want to allow TODO comments during development
+  - trailing_whitespace # Can be overly strict during development
+  - line_length # We'll configure this with custom length
+
+# Additional rules to opt into
+opt_in_rules:
+  - array_init
+  - attributes
+  - closure_end_indentation
+  - closure_spacing
+  - collection_alignment
+  - contains_over_filter_count
+  - empty_count
+  - empty_string
+  - enum_case_associated_values_count
+  - explicit_init
+  - fatal_error_message
+  - file_name
+  - first_where
+  - force_unwrapping
+  - implicit_return
+  - joined_default_parameter
+  - last_where
+  - legacy_random
+  - literal_expression_end_indentation
+  - multiline_arguments
+  - multiline_function_chains
+  - multiline_literal_brackets
+  - multiline_parameters
+  - multiline_parameters_brackets
+  - operator_usage_whitespace
+  - overridden_super_call
+  - pattern_matching_keywords
+  - prefer_self_type_over_type_of_self
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - sorted_first_last
+  - switch_case_alignment
+  - toggle_bool
+  - trailing_closure
+  - unneeded_parentheses_in_closure_argument
+  - unused_import
+  - unused_private_declaration
+  - vertical_parameter_alignment_on_call
+  - yoda_condition
+
+# Analyzer rules (run with `swiftlint analyze`)
+analyzer_rules:
+  - explicit_self
+  - unused_import
+  - unused_declaration
+
+# Configuration for specific rules
+line_length:
+  warning: 120
+  error: 150
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_comments: true
+
+function_body_length:
+  warning: 80
+  error: 120
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 800
+  error: 1200
+  ignore_comment_only_lines: true
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+
+function_parameter_count:
+  warning: 6
+  error: 8
+
+type_name:
+  min_length: 3
+  max_length: 40
+  excluded:
+    - ID
+    - URL
+    - UUID
+    - API
+    - UI
+    - AI
+    - GIF
+    - PDF
+    - PNG
+    - JPG
+    - JPEG
+  validates_start_with_lowercase: false
+
+identifier_name:
+  min_length: 2
+  max_length: 40
+  excluded:
+    - id
+    - url
+    - api
+    - ui
+    - ai
+    - x
+    - y
+    - z
+    - i
+    - j
+    - k
+    - to
+    - at
+    - on
+    - of
+    - in
+    - is
+    - or
+    - up
+    - os
+    - tv
+    - db
+    - ok
+    - md
+    - css
+    - js
+    - ts
+    - vm
+    - io
+    - no
+
+# Indentation configuration
+indentation_width:
+  indentation_width: 4
+
+# Force unwrapping configuration
+force_unwrapping:
+  severity: warning
+
+# Naming rules
+generic_type_name:
+  min_length: 1
+  max_length: 20
+
+# Large tuple configuration
+large_tuple:
+  warning: 3
+  error: 4
+
+# Nesting configuration
+nesting:
+  type_level:
+    warning: 3
+  statement_level:
+    warning: 5
+
+# Custom rules specific to PhotoBooth
+custom_rules:
+  # Ensure proper logging instead of print statements
+  no_print_statements:
+    name: "No Print Statements"
+    regex: '\bprint\s*\('
+    message: "Use os.log instead of print statements for production code"
+    severity: warning
+    
+  # Ensure proper error handling
+  proper_error_handling:
+    name: "Proper Error Handling"
+    regex: '\btry!\s'
+    message: "Avoid force try (!). Use proper error handling with do-catch"
+    severity: error
+    
+  # Ensure ViewModels are properly named
+  viewmodel_naming:
+    name: "ViewModel Naming Convention"
+    regex: '(class|struct)\s+\w+Model\s*:'
+    message: "Use 'ViewModel' suffix instead of 'Model' for ViewModels"
+    severity: warning
+    included: ".*ViewModel.*\\.swift"
+    
+  # Camera service specific rules
+  camera_error_handling:
+    name: "Camera Error Handling"
+    regex: 'AVCaptureDevice\\.devices'
+    message: "Use proper error handling when accessing camera devices"
+    severity: warning
+    included: ".*Camera.*\\.swift"
+    
+  # API key security
+  hardcoded_api_keys:
+    name: "No Hardcoded API Keys"
+    regex: '(api_key|apikey|secret|token|password)\s*[=:]\s*["\'][^"\']{8,}["\']'
+    message: "Avoid hardcoding API keys, secrets, or tokens"
+    severity: error
+    
+  # SwiftUI best practices
+  swiftui_state_management:
+    name: "SwiftUI State Management"
+    regex: '@State\s+var\s+\w+\s*:\s*\w+\s*='
+    message: "Consider using @State private for internal state management"
+    severity: warning
+    included: ".*View.*\\.swift"
+
+# Reporter type
+reporter: "xcode"
+
+# Baseline file for managing existing violations
+baseline: "swiftlint-baseline.json"
+
+# Check for updates
+check_for_updates: true
+
+# Strict mode - treat all warnings as errors (disabled for development)
+strict: false
+
+# Allow zero lintable files
+allow_zero_lintable_files: false 

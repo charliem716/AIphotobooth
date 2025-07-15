@@ -9,6 +9,12 @@ struct SettingsView: View {
     @AppStorage("autoShowProjector") private var autoShowProjector = true
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var projectorManager: ProjectorWindowManager
+    @StateObject private var cacheService = CacheManagementService()
+    @State private var showingCacheManagement = false
+    
+    private var cacheStats: CacheStatistics {
+        cacheService.cacheStatistics
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -118,22 +124,90 @@ struct SettingsView: View {
                 .padding()
             }
             
-            GroupBox("Cache Settings") {
+            GroupBox("Cache Management") {
                 VStack(alignment: .leading, spacing: 12) {
+                    // Cache Statistics Summary
                     HStack {
-                        Text("Keep photos for:")
-                        Picker("", selection: $cacheRetentionDays) {
-                            Text("3 days").tag(3)
-                            Text("7 days").tag(7)
-                            Text("14 days").tag(14)
-                            Text("30 days").tag(30)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Cache Size:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text(cacheStats.formattedSize)
+                                .font(.headline)
+                                .fontWeight(.medium)
                         }
-                        .pickerStyle(MenuPickerStyle())
-                        .frame(width: 150)
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Files:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text("\(cacheStats.totalFiles)")
+                                .font(.headline)
+                                .fontWeight(.medium)
+                        }
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Status:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text(cacheStats.needsCleanup ? "Needs Cleanup" : "Healthy")
+                                .font(.headline)
+                                .fontWeight(.medium)
+                                .foregroundColor(cacheStats.needsCleanup ? .orange : .green)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                    
+                    // Quick Actions
+                    HStack {
+                        Button("Refresh Stats") {
+                            Task {
+                                await cacheService.refreshCacheStatistics()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Quick Clean (7 days)") {
+                            Task {
+                                try? await cacheService.cleanupCache(retentionDays: 7)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(cacheService.isCleaningUp)
+                        
+                        Spacer()
+                        
+                        Button("Advanced...") {
+                            showingCacheManagement = true
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                     
-                    Button("Clear Cache Now") {
-                        clearCache()
+                    // Auto-cleanup toggle
+                    HStack {
+                        Text("Automatic Cleanup:")
+                        Spacer()
+                        Toggle("", isOn: $cacheService.automaticCleanupEnabled)
+                        
+                        if cacheService.automaticCleanupEnabled {
+                            Text("(\(cacheService.automaticCleanupRetentionDays) days)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    if cacheService.isCleaningUp {
+                        HStack {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Cleaning cache...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
                 .padding()
@@ -184,6 +258,14 @@ struct SettingsView: View {
                     dismiss()
                 }
             }
+        }
+        .onAppear {
+            Task {
+                await cacheService.refreshCacheStatistics()
+            }
+        }
+        .sheet(isPresented: $showingCacheManagement) {
+            CacheManagementView(cacheService: cacheService)
         }
     }
     

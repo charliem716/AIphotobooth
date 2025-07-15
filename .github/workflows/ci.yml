@@ -1,0 +1,317 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 6 * * *' # Daily at 6 AM UTC
+
+env:
+  SWIFT_VERSION: '5.10'
+  XCODE_VERSION: '15.4'
+
+jobs:
+  # Job 1: Code Quality and Linting
+  code-quality:
+    name: Code Quality & Linting
+    runs-on: macos-14
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+    
+    - name: Install SwiftLint
+      run: |
+        brew install swiftlint
+        swiftlint --version
+    
+    - name: SwiftLint Analysis
+      run: |
+        swiftlint lint --reporter github-actions-logging
+        swiftlint analyze --reporter github-actions-logging
+    
+    - name: Upload SwiftLint Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: swiftlint-results
+        path: |
+          swiftlint-results.json
+          swiftlint-baseline.json
+        retention-days: 30
+
+  # Job 2: Build and Test
+  build-and-test:
+    name: Build & Test
+    runs-on: macos-14
+    strategy:
+      matrix:
+        destination: ['macOS']
+        
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+    
+    - name: Cache Swift Package Manager
+      uses: actions/cache@v4
+      with:
+        path: |
+          .build
+          ~/Library/Developer/Xcode/DerivedData
+        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
+    
+    - name: Resolve Swift Package Dependencies
+      run: swift package resolve
+    
+    - name: Build Project
+      run: |
+        swift build -c release
+    
+    - name: Run Unit Tests
+      run: |
+        swift test --enable-code-coverage
+    
+    - name: Run UI Tests (macOS)
+      run: |
+        xcodebuild test \
+          -scheme PhotoBooth \
+          -destination 'platform=macOS,arch=arm64' \
+          -derivedDataPath .build/DerivedData \
+          -resultBundlePath .build/test-results.xcresult \
+          -enableCodeCoverage YES \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO
+    
+    - name: Generate Code Coverage Report
+      run: |
+        xcrun llvm-cov show \
+          .build/x86_64-apple-macosx/debug/PhotoBoothPackageTests.xctest/Contents/MacOS/PhotoBoothPackageTests \
+          -instr-profile .build/x86_64-apple-macosx/debug/codecov/default.profdata \
+          -format html \
+          -output-dir .build/coverage-html
+    
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.destination }}
+        path: |
+          .build/test-results.xcresult
+          .build/coverage-html
+        retention-days: 30
+    
+    - name: Upload Coverage Reports
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        directory: .build/coverage-html
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  # Job 3: Security and Dependency Scanning
+  security-scan:
+    name: Security & Dependency Scan
+    runs-on: macos-14
+    permissions:
+      security-events: write
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+    
+    - name: Swift Package Audit
+      run: |
+        swift package show-dependencies --format json > dependencies.json
+        # Check for known vulnerabilities in dependencies
+        if command -v audit-swift &> /dev/null; then
+          audit-swift dependencies.json
+        fi
+    
+    - name: Check for Hardcoded Secrets
+      run: |
+        # Basic secret scanning patterns
+        echo "Scanning for potential hardcoded secrets..."
+        git log --all --full-history --grep="password\|secret\|key\|token" --oneline || true
+        
+        # Check for common secret patterns in source code
+        grep -r -n -i -E "(password|secret|key|token|api_key|apikey)\s*[=:]\s*[\"'][^\"']{8,}" . --include="*.swift" --include="*.plist" --include="*.json" || true
+    
+    - name: License Check
+      run: |
+        # Check for license compatibility
+        swift package show-dependencies --format json | jq '.dependencies[].name' || true
+    
+    - name: Upload Security Scan Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-scan-results
+        path: |
+          dependencies.json
+          security-scan.log
+        retention-days: 90
+
+  # Job 4: Build Performance Analysis
+  performance-analysis:
+    name: Build Performance Analysis
+    runs-on: macos-14
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+    
+    - name: Build Time Analysis
+      run: |
+        # Build with timing information
+        time swift build -c release -v 2>&1 | tee build-timing.log
+    
+    - name: Bundle Size Analysis
+      run: |
+        # Analyze built product size
+        swift build -c release
+        find .build -name "*.app" -o -name "*.framework" -o -name "*.dylib" | \
+          xargs -I {} du -sh {} > bundle-sizes.txt
+    
+    - name: Upload Performance Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-analysis
+        path: |
+          build-timing.log
+          bundle-sizes.txt
+        retention-days: 30
+
+  # Job 5: Documentation Generation
+  documentation:
+    name: Generate Documentation
+    runs-on: macos-14
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+    
+    - name: Generate Swift Documentation
+      run: |
+        # Generate documentation using swift-docc if available
+        if swift package plugin --list | grep -q docc; then
+          swift package generate-documentation \
+            --target PhotoBooth \
+            --output-path .build/documentation
+        fi
+    
+    - name: Upload Documentation
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: documentation
+        path: .build/documentation
+        retention-days: 30
+
+  # Job 6: Deployment Preparation
+  deployment-prep:
+    name: Deployment Preparation
+    runs-on: macos-14
+    needs: [code-quality, build-and-test, security-scan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Select Xcode Version
+      run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app/Contents/Developer
+    
+    - name: Archive Application
+      run: |
+        xcodebuild archive \
+          -scheme PhotoBooth \
+          -destination 'generic/platform=macOS' \
+          -archivePath .build/PhotoBooth.xcarchive \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO
+    
+    - name: Export Application
+      run: |
+        xcodebuild -exportArchive \
+          -archivePath .build/PhotoBooth.xcarchive \
+          -exportPath .build/export \
+          -exportOptionsPlist .build/ExportOptions.plist || true
+    
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          .build/PhotoBooth.xcarchive
+          .build/export
+        retention-days: 90
+
+  # Job 7: Notification and Reporting
+  notification:
+    name: Notification & Reporting
+    runs-on: ubuntu-latest
+    needs: [code-quality, build-and-test, security-scan]
+    if: always()
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+    
+    - name: Generate CI Report
+      run: |
+        echo "# CI/CD Pipeline Report" > ci-report.md
+        echo "## Build Status" >> ci-report.md
+        echo "- Code Quality: ${{ needs.code-quality.result }}" >> ci-report.md
+        echo "- Build & Test: ${{ needs.build-and-test.result }}" >> ci-report.md
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> ci-report.md
+        echo "## Commit Information" >> ci-report.md
+        echo "- Commit: ${{ github.sha }}" >> ci-report.md
+        echo "- Author: ${{ github.actor }}" >> ci-report.md
+        echo "- Branch: ${{ github.ref_name }}" >> ci-report.md
+        echo "- Event: ${{ github.event_name }}" >> ci-report.md
+    
+    - name: Upload CI Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: ci-report
+        path: ci-report.md
+        retention-days: 30
+    
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('ci-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          }); 

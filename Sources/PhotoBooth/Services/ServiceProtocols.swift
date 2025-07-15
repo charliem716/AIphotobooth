@@ -71,6 +71,29 @@ protocol ImageProcessingServiceProtocol: ObservableObject {
     func getCacheStatistics() async -> CacheStatistics
 }
 
+// MARK: - Cache Management Service Protocol
+
+/// Protocol for cache management services
+@MainActor
+protocol CacheManagementServiceProtocol: ObservableObject {
+    var cacheStatistics: CacheStatistics { get }
+    var isCleaningUp: Bool { get }
+    var automaticCleanupEnabled: Bool { get set }
+    var automaticCleanupRetentionDays: Int { get set }
+    var lastCleanupDate: Date? { get }
+    
+    func refreshCacheStatistics() async
+    func cleanupCache(retentionDays: Int) async throws
+    func performAutomaticCleanup() async throws
+    func scheduleAutomaticCleanup()
+    func cancelAutomaticCleanup()
+    func getCacheSize() async -> Int64
+    func getCacheFileCount() async -> Int
+    func getOldestCacheFile() async -> Date?
+    func getNewestCacheFile() async -> Date?
+    func exportCacheCleanupScript() throws -> URL
+}
+
 // MARK: - Service Coordinator Protocol
 
 /// Protocol for coordinating between multiple services
@@ -80,6 +103,7 @@ protocol PhotoBoothServiceCoordinatorProtocol: ObservableObject {
     var openAIService: any OpenAIServiceProtocol { get }
     var cameraService: any CameraServiceProtocol { get }
     var imageProcessingService: any ImageProcessingServiceProtocol { get }
+    var cacheManagementService: any CacheManagementServiceProtocol { get }
     
     func setupAllServices() async
     func validateServicesConfiguration() -> Bool
@@ -110,6 +134,25 @@ extension CameraServiceProtocol {
 extension ImageProcessingServiceProtocol {
     func cleanupOldImages() async throws {
         try await cleanupOldImages(retentionDays: 7)
+    }
+}
+
+/// Default implementations for cache management service
+extension CacheManagementServiceProtocol {
+    func performAutomaticCleanup() async throws {
+        if automaticCleanupEnabled {
+            try await cleanupCache(retentionDays: automaticCleanupRetentionDays)
+        }
+    }
+    
+    var automaticCleanupRetentionDays: Int {
+        get { 7 }
+        set { }
+    }
+    
+    var automaticCleanupEnabled: Bool {
+        get { false }
+        set { }
     }
 }
 
