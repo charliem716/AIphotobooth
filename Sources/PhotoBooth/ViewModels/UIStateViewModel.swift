@@ -94,7 +94,7 @@ final class UIStateViewModel: ObservableObject {
         // Auto-hide after duration
         Task {
             try await Task.sleep(for: .seconds(duration))
-            await hideError()
+            hideError()
         }
     }
     
@@ -114,7 +114,7 @@ final class UIStateViewModel: ObservableObject {
         // Auto-hide after duration
         Task {
             try await Task.sleep(for: .seconds(duration))
-            await hideSuccess()
+            hideSuccess()
         }
     }
     
@@ -238,11 +238,11 @@ final class UIStateViewModel: ObservableObject {
         }
         
         if minimumDisplayTimeRemaining <= 0 {
-            logInfo("\(LoggingService.Emoji.success) Minimum display period completed", category: .ui)
+            logInfo("\(LoggingService.Emoji.success) Minimum display period completed - photo will remain displayed until new theme is selected", category: .ui)
             stopMinimumDisplayPeriod()
             
-            // Automatically return to live camera view after minimum display period
-            NotificationCenter.default.post(name: .returnToLiveCamera, object: nil)
+            // Note: No longer automatically returning to live camera view
+            // Photo will remain displayed until a new theme is selected
         }
     }
 }

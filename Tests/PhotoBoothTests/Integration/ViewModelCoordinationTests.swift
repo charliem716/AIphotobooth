@@ -38,17 +38,17 @@ final class ViewModelCoordinationTests: XCTestCase {
     
     /// Test that main PhotoBoothViewModel properly coordinates specialized ViewModels
     func testMainViewModelCoordination() async throws {
-        // Verify all specialized ViewModels are initialized
+        // THEN: Should coordinate properly
+        XCTAssertNotNil(mainViewModel.cameraViewModel.isSessionRunning)
+        XCTAssertNotNil(mainViewModel.cameraViewModel.isCameraConnected)
+        XCTAssertNotNil(mainViewModel.imageProcessingViewModel.isProcessing)
+        XCTAssertNotNil(mainViewModel.uiStateViewModel.countdown)
+        XCTAssertNotNil(mainViewModel.uiStateViewModel.isCountingDown)
+        
+        // Test that main ViewModel exposes proper specialized ViewModels
         XCTAssertNotNil(mainViewModel.cameraViewModel)
         XCTAssertNotNil(mainViewModel.imageProcessingViewModel)
         XCTAssertNotNil(mainViewModel.uiStateViewModel)
-        
-        // Test that main ViewModel exposes proper computed properties
-        XCTAssertNotNil(mainViewModel.isSessionRunning)
-        XCTAssertNotNil(mainViewModel.isCameraConnected)
-        XCTAssertNotNil(mainViewModel.isProcessing)
-        XCTAssertNotNil(mainViewModel.countdown)
-        XCTAssertNotNil(mainViewModel.isCountingDown)
         
         // Test that configuration properties are accessible
         XCTAssertNotNil(mainViewModel.isOpenAIConfigured)
@@ -101,14 +101,14 @@ final class ViewModelCoordinationTests: XCTestCase {
             imageProcessingViewModel.selectedTheme = firstTheme
             
             // Verify theme selection is reflected in main ViewModel
-            XCTAssertEqual(mainViewModel.selectedTheme?.id, firstTheme.id)
+            XCTAssertEqual(mainViewModel.imageProcessingViewModel.selectedTheme?.id, firstTheme.id)
         }
         
         // Test that processing state affects UI
         let processingState = imageProcessingViewModel.isProcessing
         
         // Should be consistent with main ViewModel
-        XCTAssertEqual(mainViewModel.isProcessing, processingState)
+        XCTAssertEqual(mainViewModel.imageProcessingViewModel.isProcessing, processingState)
         
         // Test error handling coordination
         if let errorMessage = uiStateViewModel.errorMessage {
@@ -142,7 +142,7 @@ final class ViewModelCoordinationTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 3.0)
         
         // Verify state consistency
-        XCTAssertEqual(mainViewModel.isCameraConnected, 
+        XCTAssertEqual(mainViewModel.cameraViewModel.isCameraConnected, 
                       mainViewModel.cameraViewModel.isCameraConnected)
     }
     
@@ -151,13 +151,13 @@ final class ViewModelCoordinationTests: XCTestCase {
         let cameraViewModel = mainViewModel.cameraViewModel
         let imageProcessingViewModel = mainViewModel.imageProcessingViewModel
         
-        // Test that ViewModels have proper delegation setup
-        XCTAssertNotNil(cameraViewModel.delegate)
-        XCTAssertNotNil(imageProcessingViewModel.delegate)
+        // Test that ViewModels have proper publisher-based communication setup
+        XCTAssertNotNil(cameraViewModel.photoCapturedPublisher)
+        XCTAssertNotNil(imageProcessingViewModel.processingCompletedPublisher)
         
-        // Test delegate methods are called appropriately
-        // Note: This would typically involve more complex mocking
-        // For now, we verify the delegation structure exists
+        // Test that specialized ViewModels are properly connected
+        XCTAssertNotNil(cameraViewModel)
+        XCTAssertNotNil(imageProcessingViewModel)
         
         // Test that main ViewModel acts as coordinator
         XCTAssertNotNil(mainViewModel, "Main ViewModel should coordinate other ViewModels")
@@ -182,7 +182,7 @@ final class ViewModelCoordinationTests: XCTestCase {
                          "Async operations should complete within 10 seconds")
         
         // Verify final state consistency
-        XCTAssertEqual(mainViewModel.isSessionRunning, 
+        XCTAssertEqual(mainViewModel.cameraViewModel.isSessionRunning, 
                       mainViewModel.cameraViewModel.isSessionRunning)
     }
     

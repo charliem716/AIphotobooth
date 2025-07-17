@@ -15,6 +15,32 @@ final class ImageProcessingViewModel: ObservableObject {
     @Published var processingProgress: Double = 0.0
     @Published var currentProcessingStep: ProcessingStep = .idle
     
+    // MARK: - Publishers for Events
+    private let themeSelectedSubject = PassthroughSubject<PhotoTheme, Never>()
+    private let originalImageSavedSubject = PassthroughSubject<URL, Never>()
+    private let processingCompletedSubject = PassthroughSubject<ImageProcessingResult, Never>()
+    private let processingErrorSubject = PassthroughSubject<ImageProcessingViewModelError, Never>()
+    
+    /// Publisher for theme selection events
+    var themeSelectedPublisher: AnyPublisher<PhotoTheme, Never> {
+        themeSelectedSubject.eraseToAnyPublisher()
+    }
+    
+    /// Publisher for original image saved events
+    var originalImageSavedPublisher: AnyPublisher<URL, Never> {
+        originalImageSavedSubject.eraseToAnyPublisher()
+    }
+    
+    /// Publisher for processing completion events
+    var processingCompletedPublisher: AnyPublisher<ImageProcessingResult, Never> {
+        processingCompletedSubject.eraseToAnyPublisher()
+    }
+    
+    /// Publisher for processing error events
+    var processingErrorPublisher: AnyPublisher<ImageProcessingViewModelError, Never> {
+        processingErrorSubject.eraseToAnyPublisher()
+    }
+    
     // MARK: - Private Properties
     private let openAIService: any OpenAIServiceProtocol
     private let imageProcessingService: any ImageProcessingServiceProtocol
@@ -23,7 +49,7 @@ final class ImageProcessingViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var currentPhotoTimestamp: TimeInterval?
     
-    // MARK: - Delegation
+    // MARK: - Delegation (deprecated - use publishers instead)
     weak var delegate: ImageProcessingViewModelDelegate?
     
     // MARK: - Computed Properties
@@ -78,6 +104,11 @@ final class ImageProcessingViewModel: ObservableObject {
     func selectTheme(_ theme: PhotoTheme) {
         logger.info("Theme selected: \(theme.name)")
         selectedTheme = theme
+        
+        // Send through publisher (new approach)
+        themeSelectedSubject.send(theme)
+        
+        // Also call delegate for backward compatibility during transition
         delegate?.imageProcessingViewModel(self, didSelectTheme: theme)
     }
     
@@ -91,13 +122,17 @@ final class ImageProcessingViewModel: ObservableObject {
     func processImage(_ image: NSImage) async {
         guard let theme = selectedTheme else {
             logger.error("No theme selected for processing")
-            delegate?.imageProcessingViewModel(self, didFailWithError: ImageProcessingViewModelError.noThemeSelected)
+            let error = ImageProcessingViewModelError.noThemeSelected
+            processingErrorSubject.send(error)
+            delegate?.imageProcessingViewModel(self, didFailWithError: error)
             return
         }
         
         guard openAIService.isConfigured else {
             logger.error("OpenAI service not configured - check API key")
-            delegate?.imageProcessingViewModel(self, didFailWithError: ImageProcessingViewModelError.serviceNotConfigured)
+            let error = ImageProcessingViewModelError.serviceNotConfigured
+            processingErrorSubject.send(error)
+            delegate?.imageProcessingViewModel(self, didFailWithError: error)
             return
         }
         
@@ -121,7 +156,10 @@ final class ImageProcessingViewModel: ObservableObject {
             )
             processingProgress = 0.2
             
-            // Notify delegate about original image saved
+            // Send through publisher (new approach)
+            originalImageSavedSubject.send(originalPath)
+            
+            // Also call delegate for backward compatibility during transition
             delegate?.imageProcessingViewModel(self, didSaveOriginalImage: originalPath)
             
             // Step 2: Generate themed image (80%)
@@ -153,18 +191,20 @@ final class ImageProcessingViewModel: ObservableObject {
             currentProcessingStep = .completed
             logger.info("Image processing completed successfully")
             
-            // Notify delegate of successful completion
-            delegate?.imageProcessingViewModel(
-                self, 
-                didCompleteProcessing: ImageProcessingResult(
-                    originalImage: image,
-                    themedImage: themedImage,
-                    originalPath: originalPath,
-                    themedPath: themedPath,
-                    theme: theme,
-                    timestamp: currentPhotoTimestamp!
-                )
+            let result = ImageProcessingResult(
+                originalImage: image,
+                themedImage: themedImage,
+                originalPath: originalPath,
+                themedPath: themedPath,
+                theme: theme,
+                timestamp: currentPhotoTimestamp!
             )
+            
+            // Send through publisher (new approach)
+            processingCompletedSubject.send(result)
+            
+            // Also call delegate for backward compatibility during transition
+            delegate?.imageProcessingViewModel(self, didCompleteProcessing: result)
             
             // Reset for next processing
             resetProcessingState()
@@ -182,7 +222,12 @@ final class ImageProcessingViewModel: ObservableObject {
                 viewModelError = .unknownError(error)
             }
             
+            // Send through publisher (new approach)
+            processingErrorSubject.send(viewModelError)
+            
+            // Also call delegate for backward compatibility during transition
             delegate?.imageProcessingViewModel(self, didFailWithError: viewModelError)
+            
             resetProcessingState()
         }
     }
@@ -265,7 +310,9 @@ final class ImageProcessingViewModel: ObservableObject {
         
         // Notify delegate if no themes are available
         if !themeConfigurationService.isConfigured {
-            delegate?.imageProcessingViewModel(self, didFailWithError: ImageProcessingViewModelError.serviceNotConfigured)
+            let error = ImageProcessingViewModelError.serviceNotConfigured
+            processingErrorSubject.send(error)
+            delegate?.imageProcessingViewModel(self, didFailWithError: error)
         }
     }
     

@@ -71,12 +71,15 @@ struct ProjectorView: View {
                 idleView
                 
             case .liveCamera:
-                ProjectorCameraView(session: viewModel.captureSession)
+                ProjectorCameraView(session: viewModel.cameraViewModel.getPreviewLayer()?.session)
                 
             case .countdown:
-                ProjectorCountdownView(
-                    session: viewModel.captureSession
-                )
+                // Show live camera with countdown overlay
+                ZStack {
+                    ProjectorCameraView(session: viewModel.cameraViewModel.getPreviewLayer()?.session)
+                    ProjectorCountdownView()
+                        .environmentObject(viewModel)
+                }
                 
             case .showingOriginal:
                 originalWithProcessingView
@@ -367,7 +370,7 @@ struct ProjectorView: View {
             }
             
             // Start minimum display period using proper method
-            viewModel.startMinimumDisplayPeriod()
+            viewModel.uiStateViewModel.startMinimumDisplayPeriod()
         }
     }
     

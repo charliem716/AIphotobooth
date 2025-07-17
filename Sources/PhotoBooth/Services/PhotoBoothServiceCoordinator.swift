@@ -8,6 +8,7 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
     
         // MARK: - Services
     let configurationService: any ConfigurationServiceProtocol
+    let networkService: any NetworkServiceProtocol
     let openAIService: any OpenAIServiceProtocol
     let cameraService: any CameraServiceProtocol  
     let imageProcessingService: any ImageProcessingServiceProtocol
@@ -27,9 +28,16 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
     
     /// Initialize with default services
     convenience init() {
+        let configurationService = ConfigurationService.shared
+        let networkService = NetworkService()
+        
         self.init(
-            configurationService: ConfigurationService.shared,
-            openAIService: OpenAIService(),
+            configurationService: configurationService,
+            networkService: networkService,
+            openAIService: OpenAIService(
+                configurationService: configurationService,
+                networkService: networkService
+            ),
             cameraService: CameraService(),
             imageProcessingService: ImageProcessingService(),
             cacheManagementService: CacheManagementService(),
@@ -40,6 +48,7 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
     /// Initialize with dependency injection support
     init(
         configurationService: any ConfigurationServiceProtocol,
+        networkService: any NetworkServiceProtocol,
         openAIService: any OpenAIServiceProtocol,
         cameraService: any CameraServiceProtocol,
         imageProcessingService: any ImageProcessingServiceProtocol,
@@ -47,6 +56,7 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
         themeConfigurationService: ThemeConfigurationService
     ) {
         self.configurationService = configurationService
+        self.networkService = networkService
         self.openAIService = openAIService
         self.cameraService = cameraService
         self.imageProcessingService = imageProcessingService
@@ -63,33 +73,32 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
         logger.info("Starting service initialization...")
         initializationProgress = 0.0
         
-        // Step 1: Validate configuration (25%)
-        logger.info("Step 1/4: Validating configuration...")
+        // Step 1: Validate configuration (20%)
+        logger.info("Step 1/5: Validating configuration...")
         configurationService.validateConfiguration()
-        initializationProgress = 0.25
+        initializationProgress = 0.2
         
-        // Step 2: Setup camera service (50%)
-        logger.info("Step 2/4: Setting up camera service...")
+        // Step 2: Setup network service (40%)
+        logger.info("Step 2/5: Setting up network service...")
+        // NetworkService is initialized and ready to use
+        initializationProgress = 0.4
+        
+        // Step 3: Setup camera service (60%)
+        logger.info("Step 3/5: Setting up camera service...")
         await cameraService.setupCamera()
-        initializationProgress = 0.5
+        initializationProgress = 0.6
         
-        // Step 3: Load theme configuration (50%)
-        logger.info("Step 3/6: Loading theme configuration...")
+        // Step 4: Load theme configuration (80%)
+        logger.info("Step 4/5: Loading theme configuration...")
         await themeConfigurationService.loadConfiguration()
-        initializationProgress = 0.5
         
-        // Step 4: Initialize cache management service (62.5%)
-        logger.info("Step 4/6: Initializing cache management service...")
+        // Initialize cache management service
         await cacheManagementService.refreshCacheStatistics()
-        initializationProgress = 0.625
+        initializationProgress = 0.8
         
-        // Step 5: Verify OpenAI service (75%)
-        logger.info("Step 5/6: Verifying OpenAI service...")
+        // Step 5: Verify OpenAI service and complete (100%)
+        logger.info("Step 5/5: Verifying OpenAI service...")
         // OpenAI service is automatically configured via configuration service
-        initializationProgress = 0.75
-        
-        // Step 6: Complete initialization (100%)
-        logger.info("Step 6/6: Finalizing initialization...")
         await validateServicesSetup()
         initializationProgress = 1.0
         
@@ -100,20 +109,22 @@ final class PhotoBoothServiceCoordinator: ObservableObject, PhotoBoothServiceCoo
     /// Validate that all required services are properly configured
     func validateServicesConfiguration() -> Bool {
         let configValid = configurationService.isFullyConfigured
+        let networkReady = true // NetworkService is always ready
         let cameraReady = cameraService.authorizationStatus == .authorized
         let openAIReady = openAIService.isConfigured
         let themesReady = themeConfigurationService.isConfigured
         let cacheReady = true // Cache management service is always ready
         
-        logger.debug("Service validation - Config: \(configValid), Camera: \(cameraReady), OpenAI: \(openAIReady), Themes: \(themesReady), Cache: \(cacheReady)")
+        logger.debug("Service validation - Config: \(configValid), Network: \(networkReady), Camera: \(cameraReady), OpenAI: \(openAIReady), Themes: \(themesReady), Cache: \(cacheReady)")
         
-        return configValid && cameraReady && openAIReady && themesReady && cacheReady
+        return configValid && networkReady && cameraReady && openAIReady && themesReady && cacheReady
     }
     
     /// Get service status summary
     func getServiceStatusSummary() -> ServiceStatusSummary {
         return ServiceStatusSummary(
             configurationStatus: configurationService.isFullyConfigured ? .ready : .error,
+            networkStatus: .ready, // NetworkService is always ready
             cameraStatus: getCameraStatus(),
             openAIStatus: openAIService.isConfigured ? .ready : .error,
             imageProcessingStatus: .ready, // Always ready since it's local
@@ -226,6 +237,7 @@ enum ServiceStatus {
 /// Summary of all service statuses
 struct ServiceStatusSummary {
     let configurationStatus: ServiceStatus
+    let networkStatus: ServiceStatus
     let cameraStatus: ServiceStatus
     let openAIStatus: ServiceStatus
     let imageProcessingStatus: ServiceStatus
@@ -239,6 +251,7 @@ struct ServiceStatusSummary {
     var statusDescription: String {
         var description = "Service Status:\n"
         description += "• Configuration: \(configurationStatus.statusText)\n"
+        description += "• Network: \(networkStatus.statusText)\n"
         description += "• Camera: \(cameraStatus.statusText)\n"
         description += "• OpenAI: \(openAIStatus.statusText)\n"
         description += "• Image Processing: \(imageProcessingStatus.statusText)\n"

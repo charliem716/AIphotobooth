@@ -222,21 +222,29 @@ final class CacheManagementService: ObservableObject, CacheManagementServiceProt
     }
     
     private func calculateCacheStatistics() async throws -> CacheStatistics {
-        let fileManager = self.fileManager
         let cacheDirectoryURL = self.cacheDirectoryURL
         
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                // Create sendable wrapper for FileManager
+                struct SendableFileManager: @unchecked Sendable {
+                    let fileManager: FileManager
+                    init() {
+                        self.fileManager = FileManager.default
+                    }
+                }
+                let sendableFileManager = SendableFileManager()
+                
                 do {
                     // Create cache directory if it doesn't exist
-                    if !fileManager.fileExists(atPath: cacheDirectoryURL.path) {
-                        try fileManager.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
+                    if !sendableFileManager.fileManager.fileExists(atPath: cacheDirectoryURL.path) {
+                        try sendableFileManager.fileManager.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
                         continuation.resume(returning: CacheStatistics(totalFiles: 0, totalSizeBytes: 0, oldestFile: nil, newestFile: nil))
                         return
                     }
                     
                     let resourceKeys: [URLResourceKey] = [.fileSizeKey, .creationDateKey, .contentModificationDateKey]
-                    let files = try fileManager.contentsOfDirectory(at: cacheDirectoryURL, includingPropertiesForKeys: resourceKeys)
+                    let files = try sendableFileManager.fileManager.contentsOfDirectory(at: cacheDirectoryURL, includingPropertiesForKeys: resourceKeys)
                     
                     var totalSize: Int64 = 0
                     var totalFiles = 0
@@ -283,21 +291,29 @@ final class CacheManagementService: ObservableObject, CacheManagementServiceProt
     }
     
     private func performCleanupOperation(retentionDays: Int) async throws -> CleanupResult {
-        let fileManager = self.fileManager
         let cacheDirectoryURL = self.cacheDirectoryURL
         let logger = self.logger
         
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                // Create sendable wrapper for FileManager
+                struct SendableFileManager: @unchecked Sendable {
+                    let fileManager: FileManager
+                    init() {
+                        self.fileManager = FileManager.default
+                    }
+                }
+                let sendableFileManager = SendableFileManager()
+                
                 do {
                     let cutoffDate = Date().addingTimeInterval(-Double(retentionDays * 24 * 60 * 60))
                     
-                    guard fileManager.fileExists(atPath: cacheDirectoryURL.path) else {
+                    guard sendableFileManager.fileManager.fileExists(atPath: cacheDirectoryURL.path) else {
                         continuation.resume(returning: CleanupResult(deletedFiles: 0, freedSpace: 0))
                         return
                     }
                     
-                    let files = try fileManager.contentsOfDirectory(at: cacheDirectoryURL, includingPropertiesForKeys: [.creationDateKey, .fileSizeKey])
+                    let files = try sendableFileManager.fileManager.contentsOfDirectory(at: cacheDirectoryURL, includingPropertiesForKeys: [.creationDateKey, .fileSizeKey])
                     
                     var deletedCount = 0
                     var freedSpace: Int64 = 0
@@ -310,7 +326,7 @@ final class CacheManagementService: ObservableObject, CacheManagementServiceProt
                                creationDate < cutoffDate {
                                 
                                 let fileSize = Int64(resourceValues.fileSize ?? 0)
-                                try fileManager.removeItem(at: file)
+                                try sendableFileManager.fileManager.removeItem(at: file)
                                 
                                 deletedCount += 1
                                 freedSpace += fileSize

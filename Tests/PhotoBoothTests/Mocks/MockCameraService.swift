@@ -179,16 +179,24 @@ final class MockCameraService: ObservableObject, CameraServiceProtocol {
         delayDuration = duration
     }
     
-    func addMockCamera(name: String, type: AVCaptureDevice.DeviceType = .builtInWideAngleCamera) {
-        if let mockCamera = MockCaptureDevice.createMockDevice(
+    func addMockCamera(name: String, type: AVCaptureDevice.DeviceType = .builtInWideAngleCamera) -> AVCaptureDevice {
+        // For testing purposes, always return a valid device
+        // Try to create a mock device, fallback to system default if needed
+        let mockCamera = MockCaptureDevice.createMockDevice(
             uniqueID: "mock-\(name.lowercased())",
             localizedName: name,
             deviceType: type,
             position: .back
-        ) {
-            mockCameras.append(mockCamera)
-            availableCameras = mockCameras
-        }
+        ) ?? AVCaptureDevice.default(for: .video)!
+        
+        mockCameras.append(mockCamera)
+        availableCameras = mockCameras
+        return mockCamera
+    }
+    
+    func configureForSuccess() {
+        shouldThrowError = false
+        shouldSimulateDelay = false
     }
     
     // MARK: - Private Methods

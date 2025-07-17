@@ -15,12 +15,27 @@ final class CameraViewModel: ObservableObject, CameraCaptureDelegate {
     @Published var authorizationStatus: AVAuthorizationStatus = .notDetermined
     @Published var isCapturing = false
     
+    // MARK: - Publishers for Events
+    private let photoCapturedSubject = PassthroughSubject<NSImage, Never>()
+    private let cameraErrorSubject = PassthroughSubject<CameraViewModelError, Never>()
+    
+    /// Publisher for successful photo captures
+    var photoCapturedPublisher: AnyPublisher<NSImage, Never> {
+        photoCapturedSubject.eraseToAnyPublisher()
+    }
+    
+    /// Publisher for camera errors
+    var cameraErrorPublisher: AnyPublisher<CameraViewModelError, Never> {
+        cameraErrorSubject.eraseToAnyPublisher()
+    }
+    
     // MARK: - Private Properties
     private let cameraService: any CameraServiceProtocol
     private let logger = Logger(subsystem: "PhotoBooth", category: "CameraViewModel")
     private var cancellables = Set<AnyCancellable>()
+    private var isRefreshingCameras = false
     
-    // MARK: - Delegation
+    // MARK: - Delegation (deprecated - use publishers instead)
     weak var delegate: CameraViewModelDelegate?
     
     // MARK: - Initialization
@@ -48,27 +63,68 @@ final class CameraViewModel: ObservableObject, CameraCaptureDelegate {
     
     /// Refresh available cameras
     func refreshAvailableCameras() async {
+        guard !isRefreshingCameras else {
+            logger.warning("⚠️ Camera refresh already in progress, skipping...")
+            return
+        }
+        
+        isRefreshingCameras = true
         logger.info("Refreshing available cameras...")
-        await cameraService.discoverCameras()
-        // Sync properties after camera discovery
-        syncPropertiesFromService()
+        
+        do {
+            await cameraService.discoverCameras()
+            // Sync properties after camera discovery
+            syncPropertiesFromService()
+        } catch {
+            logger.error("❌ Error refreshing cameras: \(error)")
+        }
+        
+        isRefreshingCameras = false
     }
     
     /// Select a specific camera device
     func selectCamera(_ device: AVCaptureDevice) async {
+        guard !isRefreshingCameras else {
+            logger.warning("⚠️ Camera operation already in progress, skipping camera selection...")
+            return
+        }
+        
+        isRefreshingCameras = true
         logger.info("Selecting camera: \(device.localizedName)")
-        await cameraService.selectCamera(device)
-        // Sync properties after camera selection
-        syncPropertiesFromService()
+        
+        do {
+            await cameraService.selectCamera(device)
+            // Sync properties after camera selection
+            syncPropertiesFromService()
+        } catch {
+            logger.error("❌ Error selecting camera: \(error)")
+        }
+        
+        isRefreshingCameras = false
     }
     
     /// Force continuity camera connection
     func forceContinuityCameraConnection() async {
+        guard !isRefreshingCameras else {
+            logger.warning("⚠️ Camera operation already in progress, skipping...")
+            return
+        }
+        
+        isRefreshingCameras = true
         logger.info("Forcing continuity camera connection...")
-        await cameraService.forceContinuityCameraConnection()
-        // Sync properties after continuity camera connection attempt
-        syncPropertiesFromService()
+        
+        do {
+            await cameraService.forceContinuityCameraConnection()
+            // Sync properties after continuity camera connection attempt
+            syncPropertiesFromService()
+        } catch {
+            logger.error("❌ Error forcing continuity camera connection: \(error)")
+        }
+        
+        isRefreshingCameras = false
     }
+    
+
     
     /// Capture a photo
     func capturePhoto() {
@@ -81,7 +137,9 @@ final class CameraViewModel: ObservableObject, CameraCaptureDelegate {
         
         guard isCameraConnected && isSessionRunning else {
             logger.error("❌ Camera not ready for capture - Connected: \(self.isCameraConnected), Running: \(self.isSessionRunning)")
-            delegate?.cameraViewModel(self, didFailWithError: CameraViewModelError.cameraNotReady)
+            let error = CameraViewModelError.cameraNotReady
+            cameraErrorSubject.send(error)
+            delegate?.cameraViewModel(self, didFailWithError: error)
             return
         }
         
@@ -183,8 +241,13 @@ extension CameraViewModel {
     func cameraService(_ service: CameraService, didCapturePhoto image: NSImage) {
         logger.info("📸 CameraService didCapturePhoto callback - Photo captured successfully!")
         logger.debug("📸 Image size: \(image.size.width) x \(image.size.height)")
-        logger.debug("📸 Calling delegate: \(self.delegate != nil)")
+        
         isCapturing = false
+        
+        // Send through publisher (new approach)
+        photoCapturedSubject.send(image)
+        
+        // Also call delegate for backward compatibility during transition
         delegate?.cameraViewModel(self, didCapturePhoto: image)
     }
     
@@ -209,6 +272,10 @@ extension CameraViewModel {
             viewModelError = .sessionConfigurationFailed
         }
         
+        // Send through publisher (new approach)
+        cameraErrorSubject.send(viewModelError)
+        
+        // Also call delegate for backward compatibility during transition
         delegate?.cameraViewModel(self, didFailWithError: viewModelError)
     }
 }

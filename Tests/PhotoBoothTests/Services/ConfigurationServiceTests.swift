@@ -28,6 +28,10 @@ final class ConfigurationServiceTests: XCTestCase {
         XCTAssertFalse(service.isOpenAIConfigured, "Should not be configured initially")
         XCTAssertFalse(service.isTwilioConfigured, "Should not be configured initially")
         XCTAssertFalse(service.isFullyConfigured, "Should not be fully configured initially")
+        
+        // Test keychain methods are available
+        let status = service.getCredentialStatus()
+        XCTAssertEqual(status.count, 4, "Should have status for all credential keys")
     }
     
     @MainActor
@@ -262,5 +266,125 @@ final class ConfigurationServiceTests: XCTestCase {
         XCTAssertEqual(mockConfigService.getTwilioSID(), specialSID, "Should handle special characters in SID")
         XCTAssertTrue(mockConfigService.isOpenAIConfigured, "Should be configured with special characters")
         XCTAssertTrue(mockConfigService.isTwilioConfigured, "Should be configured with special characters")
+    }
+    
+    // MARK: - Keychain Management Tests
+    
+    @MainActor
+    func testStoreSecureCredential() {
+        // Given
+        let credential = "test-api-key-12345"
+        let key = KeychainCredentialStore.CredentialKey.openAIKey
+        
+        // When
+        let result = mockConfigService.storeSecureCredential(credential, forKey: key)
+        
+        // Then
+        XCTAssertTrue(result, "Should successfully store credential")
+        XCTAssertEqual(mockConfigService.mockStoreCredentialCallCount, 1, "Should call store once")
+        XCTAssertEqual(mockConfigService.getOpenAIKey(), credential, "Should return stored credential")
+        XCTAssertTrue(mockConfigService.isOpenAIConfigured, "Should be configured after storing")
+    }
+    
+    @MainActor
+    func testStoreEmptyCredential() {
+        // Given
+        let emptyCredential = ""
+        let key = KeychainCredentialStore.CredentialKey.openAIKey
+        
+        // When
+        let result = mockConfigService.storeSecureCredential(emptyCredential, forKey: key)
+        
+        // Then
+        XCTAssertFalse(result, "Should not store empty credential")
+        XCTAssertEqual(mockConfigService.mockStoreCredentialCallCount, 1, "Should call store once")
+        XCTAssertNil(mockConfigService.getOpenAIKey(), "Should not have stored empty credential")
+        XCTAssertFalse(mockConfigService.isOpenAIConfigured, "Should not be configured")
+    }
+    
+    @MainActor
+    func testDeleteSecureCredential() {
+        // Given
+        let credential = "test-api-key-12345"
+        let key = KeychainCredentialStore.CredentialKey.openAIKey
+        
+        // Store credential first
+        _ = mockConfigService.storeSecureCredential(credential, forKey: key)
+        XCTAssertTrue(mockConfigService.isOpenAIConfigured, "Should be configured after storing")
+        
+        // When
+        let result = mockConfigService.deleteSecureCredential(forKey: key)
+        
+        // Then
+        XCTAssertTrue(result, "Should successfully delete credential")
+        XCTAssertEqual(mockConfigService.mockDeleteCredentialCallCount, 1, "Should call delete once")
+        XCTAssertNil(mockConfigService.getOpenAIKey(), "Should not have credential after deletion")
+        XCTAssertFalse(mockConfigService.isOpenAIConfigured, "Should not be configured after deletion")
+    }
+    
+    @MainActor
+    func testGetCredentialStatus() {
+        // Given
+        let credential = "test-api-key-12345"
+        let key = KeychainCredentialStore.CredentialKey.openAIKey
+        
+        // Initially should show not stored
+        let initialStatus = mockConfigService.getCredentialStatus()
+        XCTAssertFalse(initialStatus[key]?.isStored ?? true, "Should initially show not stored")
+        XCTAssertEqual(initialStatus[key]?.source, CredentialSource.none, "Should show no source initially")
+        
+        // Store credential
+        _ = mockConfigService.storeSecureCredential(credential, forKey: key)
+        
+        // When
+        let updatedStatus = mockConfigService.getCredentialStatus()
+        
+        // Then
+        XCTAssertTrue(updatedStatus[key]?.isStored ?? false, "Should show stored after storing")
+        XCTAssertEqual(updatedStatus[key]?.source, .keychain, "Should show keychain source")
+        XCTAssertEqual(updatedStatus[key]?.length, credential.count, "Should show correct length")
+    }
+    
+    @MainActor
+    func testClearAllCredentials() {
+        // Given - Store multiple credentials
+        let credentials = [
+            (KeychainCredentialStore.CredentialKey.openAIKey, "openai-key-123"),
+            (KeychainCredentialStore.CredentialKey.twilioSID, "twilio-sid-456"),
+            (KeychainCredentialStore.CredentialKey.twilioToken, "twilio-token-789")
+        ]
+        
+        for (key, credential) in credentials {
+            _ = mockConfigService.storeSecureCredential(credential, forKey: key)
+        }
+        
+        // Verify they're stored
+        XCTAssertTrue(mockConfigService.isOpenAIConfigured, "Should be configured")
+        
+        // When
+        let result = mockConfigService.clearAllCredentials()
+        
+        // Then
+        XCTAssertTrue(result, "Should successfully clear all credentials")
+        XCTAssertEqual(mockConfigService.mockClearAllCallCount, 1, "Should call clear once")
+        XCTAssertNil(mockConfigService.getOpenAIKey(), "Should not have OpenAI key after clearing")
+        XCTAssertNil(mockConfigService.getTwilioSID(), "Should not have Twilio SID after clearing")
+        XCTAssertNil(mockConfigService.getTwilioToken(), "Should not have Twilio token after clearing")
+        XCTAssertFalse(mockConfigService.isOpenAIConfigured, "Should not be configured after clearing")
+        XCTAssertFalse(mockConfigService.isTwilioConfigured, "Should not be configured after clearing")
+    }
+    
+    @MainActor
+    func testPerformManualMigration() {
+        // Given
+        let expectedResult = 2
+        mockConfigService.setMockMigrationResult(expectedResult)
+        
+        // When
+        let result = mockConfigService.performManualMigration()
+        
+        // Then
+        XCTAssertEqual(result, expectedResult, "Should return expected migration result")
+        XCTAssertEqual(mockConfigService.mockPerformMigrationCallCount, 1, "Should call migration once")
     }
 } 

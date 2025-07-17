@@ -31,8 +31,89 @@ final class PhotoBoothUITests: XCTestCase {
     // MARK: - Helper Methods
     
     private func setupTestEnvironment() async {
-        // Basic setup for test environment
-        // The actual services will be used but in test mode
+        // Create mock services for isolated UI testing
+        let mockConfigurationService = MockConfigurationService()
+        let mockNetworkService = MockNetworkService()
+        let mockOpenAIService = MockOpenAIService()
+        let mockCameraService = MockCameraService()
+        let mockImageProcessingService = MockImageProcessingService()
+        let mockCacheManagementService = MockCacheManagementService()
+        let mockThemeConfigurationService = ThemeConfigurationService()
+        
+        // Configure mock services for UI testing
+        setupMockServices(
+            configurationService: mockConfigurationService,
+            networkService: mockNetworkService,
+            openAIService: mockOpenAIService,
+            cameraService: mockCameraService,
+            imageProcessingService: mockImageProcessingService,
+            cacheManagementService: mockCacheManagementService
+        )
+        
+        // Create test service coordinator with mocks
+        let testServiceCoordinator = PhotoBoothServiceCoordinator(
+            configurationService: mockConfigurationService,
+            networkService: mockNetworkService,
+            openAIService: mockOpenAIService,
+            cameraService: mockCameraService,
+            imageProcessingService: mockImageProcessingService,
+            cacheManagementService: mockCacheManagementService,
+            themeConfigurationService: mockThemeConfigurationService
+        )
+        
+        // Recreate viewModel with test services
+        viewModel = PhotoBoothViewModel(serviceCoordinator: testServiceCoordinator)
+        
+        // Setup photo booth system with mocks
+        await viewModel.setupPhotoBoothSystem()
+        
+        // Allow time for async operations to complete
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+    }
+    
+    private func setupMockServices(
+        configurationService: MockConfigurationService,
+        networkService: MockNetworkService,
+        openAIService: MockOpenAIService,
+        cameraService: MockCameraService,
+        imageProcessingService: MockImageProcessingService,
+        cacheManagementService: MockCacheManagementService
+    ) {
+        // Configure mock configuration service
+        configurationService.mockOpenAIKey = "test-openai-key"
+        configurationService.isOpenAIConfigured = true
+        configurationService.mockTwilioSID = "test-twilio-sid"
+        configurationService.mockTwilioToken = "test-twilio-token"
+        configurationService.mockTwilioFromNumber = "+1234567890"
+        configurationService.isTwilioConfigured = true
+        
+        // Configure mock network service for reliable UI testing
+        networkService.reset()
+        networkService.shouldSucceed = true
+        networkService.responseDelay = 0.1
+        
+        // Configure mock OpenAI service
+        openAIService.reset()
+        openAIService.shouldThrowError = false
+        openAIService.shouldSimulateDelay = false
+        openAIService.delayDuration = 0.1
+        
+        // Configure mock camera service for UI testing
+        cameraService.reset()
+        cameraService.shouldThrowError = false
+        cameraService.shouldSimulateDelay = false
+        
+        // Configure mock image processing service  
+        imageProcessingService.reset()
+        imageProcessingService.shouldThrowError = false
+        imageProcessingService.shouldSimulateDelay = false
+        imageProcessingService.delayDuration = 0.1
+        
+        // Configure mock cache management service
+        cacheManagementService.reset()
+        cacheManagementService.shouldThrowError = false
+        cacheManagementService.shouldSimulateDelay = false
+        cacheManagementService.delayDuration = 0.1
     }
     
     // MARK: - User Flow Tests
@@ -44,17 +125,17 @@ final class PhotoBoothUITests: XCTestCase {
         
         // WHEN: User selects a theme
         let theme = TestPhotoTheme.portrait
-        viewModel.selectTheme(theme)
+        viewModel.imageProcessingViewModel.selectTheme(theme)
         
         // THEN: Theme should be selected
-        XCTAssertEqual(viewModel.selectedTheme?.name, theme.name)
+        XCTAssertEqual(viewModel.imageProcessingViewModel.selectedTheme?.name, theme.name)
         
         // WHEN: User initiates photo capture
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should start countdown or process
         // Note: Actual behavior depends on camera availability
-        XCTAssertNotNil(viewModel.selectedTheme)
+        XCTAssertNotNil(viewModel.imageProcessingViewModel.selectedTheme)
     }
     
     /// Test slideshow activation and navigation workflow
@@ -82,8 +163,8 @@ final class PhotoBoothUITests: XCTestCase {
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks camera status
-        let _ = viewModel.isCameraConnected
-        let availableCameras = viewModel.availableCameras
+        let _ = viewModel.cameraViewModel.isCameraConnected
+        let availableCameras = viewModel.cameraViewModel.availableCameras
         
         // THEN: Should have camera information
         XCTAssertNotNil(availableCameras)
@@ -96,8 +177,8 @@ final class PhotoBoothUITests: XCTestCase {
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks error state
-        let hasError = viewModel.showError
-        let errorMessage = viewModel.errorMessage
+        let hasError = viewModel.uiStateViewModel.showError
+        let errorMessage = viewModel.uiStateViewModel.errorMessage
         
         // THEN: Should handle error states properly
         if hasError {
@@ -111,7 +192,7 @@ final class PhotoBoothUITests: XCTestCase {
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks processing state
-        let isProcessing = viewModel.isProcessing
+        let isProcessing = viewModel.imageProcessingViewModel.isProcessing
         
         // THEN: Should handle processing states
         XCTAssertNotNil(isProcessing)
@@ -123,8 +204,8 @@ final class PhotoBoothUITests: XCTestCase {
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks countdown state
-        let countdown = viewModel.countdown
-        let isCountingDown = viewModel.isCountingDown
+        let countdown = viewModel.uiStateViewModel.countdown
+        let isCountingDown = viewModel.uiStateViewModel.isCountingDown
         
         // THEN: Should have countdown information
         XCTAssertGreaterThanOrEqual(countdown, 0)
@@ -153,7 +234,7 @@ final class PhotoBoothUITests: XCTestCase {
     
     private func ensureCameraIsAvailable() async {
         // Check if camera is available for testing
-        let isConnected = viewModel.isCameraConnected
+        let isConnected = viewModel.cameraViewModel.isCameraConnected
         if !isConnected {
             // Log that camera is not available in test environment
             print("Camera not available in test environment")
@@ -174,17 +255,17 @@ final class PhotoBoothUITests: XCTestCase {
             throw TestError.themeNotFound
         }
         
-        viewModel.selectTheme(theme)
+        viewModel.imageProcessingViewModel.selectTheme(theme)
     }
     
     private func initiatePhotoCapture() async throws {
-        viewModel.takePhoto()
+        viewModel.startCapture()
     }
     
     private func waitForCountdownCompletion() async throws {
         // Wait for countdown to complete
         var attempts = 0
-        while viewModel.isCountingDown && attempts < 50 {
+        while viewModel.uiStateViewModel.isCountingDown && attempts < 50 {
             try await Task.sleep(for: .milliseconds(100))
             attempts += 1
         }
@@ -197,7 +278,7 @@ final class PhotoBoothUITests: XCTestCase {
     private func waitForProcessingToStart() async throws {
         // Processing state checking
         var attempts = 0
-        while !viewModel.isProcessing && attempts < 10 {
+        while !viewModel.imageProcessingViewModel.isProcessing && attempts < 10 {
             try await Task.sleep(for: .milliseconds(100))
             attempts += 1
         }
@@ -206,7 +287,7 @@ final class PhotoBoothUITests: XCTestCase {
     private func waitForProcessingToComplete() async throws {
         // Wait for processing to complete
         var attempts = 0
-        while viewModel.isProcessing && attempts < 50 {
+        while viewModel.imageProcessingViewModel.isProcessing && attempts < 50 {
             try await Task.sleep(for: .milliseconds(100))
             attempts += 1
         }
@@ -219,7 +300,7 @@ final class PhotoBoothUITests: XCTestCase {
     private func waitForMinimumDisplayPeriod() async throws {
         // Wait for minimum display period
         var attempts = 0
-        while viewModel.isInMinimumDisplayPeriod && attempts < 50 {
+        while viewModel.uiStateViewModel.isInMinimumDisplayPeriod && attempts < 50 {
             try await Task.sleep(for: .milliseconds(100))
             attempts += 1
         }
@@ -263,23 +344,23 @@ final class PhotoBoothUITests: XCTestCase {
     
     private func openCameraSelection() async throws {
         // Camera selection testing
-        let cameras = viewModel.availableCameras
+        let cameras = viewModel.cameraViewModel.availableCameras
         XCTAssertNotNil(cameras)
     }
     
     private func selectCamera(index: Int) async throws {
-        let cameras = viewModel.availableCameras
+        let cameras = viewModel.cameraViewModel.availableCameras
         guard index < cameras.count else {
             throw TestError.cameraIndexOutOfRange
         }
         
         let camera = cameras[index]
-        await viewModel.selectCamera(camera)
+        await viewModel.cameraViewModel.selectCamera(camera)
     }
     
     private func confirmCameraSelection() async throws {
         // Camera selection confirmation
-        let selectedCamera = viewModel.selectedCameraDevice
+        let selectedCamera = viewModel.cameraViewModel.selectedCameraDevice
         XCTAssertNotNil(selectedCamera)
     }
     
@@ -291,7 +372,7 @@ final class PhotoBoothUITests: XCTestCase {
     
     private func attemptCameraReconnection() async throws {
         // Attempt to reconnect camera
-        await viewModel.refreshAvailableCameras()
+        await viewModel.cameraViewModel.refreshAvailableCameras()
     }
     
     private func simulateSuccessfulReconnection() async throws {
@@ -301,12 +382,12 @@ final class PhotoBoothUITests: XCTestCase {
     
     private func capturePhotoWithAPIError() async throws {
         // Capture photo with API error simulation
-        viewModel.takePhoto()
+        viewModel.startCapture()
     }
     
     private func retryAfterAPIError() async throws {
         // Retry after API error
-        if viewModel.showError {
+        if viewModel.uiStateViewModel.showError {
             viewModel.uiStateViewModel.hideError()
         }
     }
@@ -323,7 +404,7 @@ final class PhotoBoothUITests: XCTestCase {
     }
     
     private func startCountdown() async throws {
-        viewModel.takePhoto()
+        viewModel.startCapture()
     }
     
     private func scanForPhotos() async throws {

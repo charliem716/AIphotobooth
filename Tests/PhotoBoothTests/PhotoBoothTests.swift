@@ -14,13 +14,13 @@ final class PhotoBoothTests: XCTestCase {
         
         // In test environment, the theme service should load available themes
         // This could be either from themes.json or fallback themes
-        XCTAssertGreaterThan(viewModel.themes.count, 0, "Should have themes available in test environment")
+        XCTAssertGreaterThan(viewModel.imageProcessingViewModel.themes.count, 0, "Should have themes available in test environment")
         
         // Verify themes are not empty
-        XCTAssertFalse(viewModel.themes.isEmpty, "Should have at least some themes available")
+        XCTAssertFalse(viewModel.imageProcessingViewModel.themes.isEmpty, "Should have at least some themes available")
         
         // Verify theme structure
-        if let firstTheme = viewModel.themes.first {
+        if let firstTheme = viewModel.imageProcessingViewModel.themes.first {
             XCTAssertFalse(firstTheme.name.isEmpty, "Theme should have a name")
             XCTAssertFalse(firstTheme.prompt.isEmpty, "Theme should have a prompt")
             XCTAssertTrue(firstTheme.id > 0, "Theme should have a valid ID")

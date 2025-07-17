@@ -18,6 +18,8 @@ let package = Package(
         .package(url: "https://github.com/MacPaw/OpenAI.git", branch: "main"),
         // For loading environment variables
         .package(url: "https://github.com/thebarndog/swift-dotenv.git", from: "2.0.0"),
+        // For secure keychain credential storage
+        .package(url: "https://github.com/evgenyneu/keychain-swift.git", from: "22.0.0"),
     ],
     targets: [
         .executableTarget(
@@ -25,6 +27,7 @@ let package = Package(
             dependencies: [
                 .product(name: "OpenAI", package: "OpenAI"),
                 .product(name: "SwiftDotenv", package: "swift-dotenv"),
+                .product(name: "KeychainSwift", package: "keychain-swift"),
             ],
             resources: [
                 .process("Resources")

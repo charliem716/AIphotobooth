@@ -266,9 +266,10 @@ final class PhotoBoothViewModel: NSObject, ObservableObject {
             stopSlideshow()
         }
         
-        // If minimum display period has elapsed, return to live camera view
-        if !uiStateViewModel.isInMinimumDisplayPeriod && uiStateViewModel.isReadyForNextPhoto {
-            logger.info("Theme selected and minimum display period elapsed - returning to live camera view")
+        // Always return to live camera view when a new theme is selected
+        // This gives the photo attendant control over when to return from the themed photo display
+        if uiStateViewModel.isReadyForNextPhoto {
+            logger.info("Theme selected - returning to live camera view")
             NotificationCenter.default.post(name: .returnToLiveCamera, object: nil)
         }
     }

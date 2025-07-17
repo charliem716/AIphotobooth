@@ -112,11 +112,17 @@ final class MockOpenAIService: ObservableObject, OpenAIServiceProtocol {
 
 // MARK: - Mock Error Types
 
-enum MockOpenAIError: Error, LocalizedError {
+/// Mock OpenAI specific errors
+enum MockOpenAIError: Error, LocalizedError, Equatable {
     case mockGenerationError
     case mockConfigurationError
     case mockNetworkError
     case mockThemeNotSupported
+    case networkTimeout
+    case rateLimitExceeded
+    case invalidAPIKey
+    case serviceNotConfigured
+    case imageProcessingFailed
     
     var errorDescription: String? {
         switch self {
@@ -128,6 +134,16 @@ enum MockOpenAIError: Error, LocalizedError {
             return "Mock network error"
         case .mockThemeNotSupported:
             return "Mock theme not supported"
+        case .networkTimeout:
+            return "Network timeout error"
+        case .rateLimitExceeded:
+            return "Rate limit exceeded"
+        case .invalidAPIKey:
+            return "Invalid API key"
+        case .serviceNotConfigured:
+            return "Service not configured"
+        case .imageProcessingFailed:
+            return "Image processing failed"
         }
     }
 } 

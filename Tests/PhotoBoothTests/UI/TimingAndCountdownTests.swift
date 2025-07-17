@@ -1,55 +1,114 @@
 import XCTest
-import SwiftUI
-import AVFoundation
 @testable import PhotoBooth
 
-/// Timing and countdown tests for PhotoBooth application
-/// Tests timing precision and countdown functionality using ViewModels directly
+/// Tests for timing and countdown functionality
 @MainActor
 final class TimingAndCountdownTests: XCTestCase {
     
     // MARK: - Test Properties
     private var viewModel: PhotoBoothViewModel!
-    private var timingValidator: TimingValidator!
     
     // MARK: - Test Lifecycle
     
     override func setUp() async throws {
         continueAfterFailure = false
         
-        // Setup view model with default configuration
-        viewModel = PhotoBoothViewModel()
+        // Create mock services for isolated testing
+        let mockConfigurationService = MockConfigurationService()
+        let mockNetworkService = MockNetworkService()
+        let mockOpenAIService = MockOpenAIService()
+        let mockCameraService = MockCameraService()
+        let mockImageProcessingService = MockImageProcessingService()
+        let mockCacheManagementService = MockCacheManagementService()
+        let mockThemeConfigurationService = ThemeConfigurationService()
         
-        // Setup timing validator
-        timingValidator = TimingValidator()
+        // Configure mock services for timing tests
+        setupMockServices(
+            configurationService: mockConfigurationService,
+            networkService: mockNetworkService,
+            openAIService: mockOpenAIService,
+            cameraService: mockCameraService,
+            imageProcessingService: mockImageProcessingService,
+            cacheManagementService: mockCacheManagementService
+        )
         
-        // Configure for testing
-        await setupTestEnvironment()
+        // Create test service coordinator with mocks
+        let testServiceCoordinator = PhotoBoothServiceCoordinator(
+            configurationService: mockConfigurationService,
+            networkService: mockNetworkService,
+            openAIService: mockOpenAIService,
+            cameraService: mockCameraService,
+            imageProcessingService: mockImageProcessingService,
+            cacheManagementService: mockCacheManagementService,
+            themeConfigurationService: mockThemeConfigurationService
+        )
+        
+        // Create viewModel with test services
+        viewModel = PhotoBoothViewModel(serviceCoordinator: testServiceCoordinator)
+        await viewModel.setupPhotoBoothSystem()
+        
+        // Allow time for async operations to complete
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
     }
     
     override func tearDown() async throws {
-        // Clean up test state
         viewModel = nil
-        timingValidator = nil
     }
     
-    // MARK: - Helper Methods
-    
-    private func setupTestEnvironment() async {
-        // Basic setup for test environment
-        // The actual services will be used but in test mode
+    private func setupMockServices(
+        configurationService: MockConfigurationService,
+        networkService: MockNetworkService,
+        openAIService: MockOpenAIService,
+        cameraService: MockCameraService,
+        imageProcessingService: MockImageProcessingService,
+        cacheManagementService: MockCacheManagementService
+    ) {
+        // Configure mock configuration service
+        configurationService.mockOpenAIKey = "test-openai-key"
+        configurationService.isOpenAIConfigured = true
+        configurationService.mockTwilioSID = "test-twilio-sid"
+        configurationService.mockTwilioToken = "test-twilio-token"
+        configurationService.mockTwilioFromNumber = "+1234567890"
+        configurationService.isTwilioConfigured = true
+        
+        // Configure mock network service for reliable testing
+        networkService.reset()
+        networkService.shouldSucceed = true
+        networkService.responseDelay = 0.1
+        
+        // Configure mock OpenAI service
+        openAIService.reset()
+        openAIService.shouldThrowError = false
+        openAIService.shouldSimulateDelay = false
+        openAIService.delayDuration = 0.1
+        
+        // Configure mock camera service for timing tests
+        cameraService.reset()
+        cameraService.shouldThrowError = false
+        cameraService.shouldSimulateDelay = false
+        
+        // Configure mock image processing service  
+        imageProcessingService.reset()
+        imageProcessingService.shouldThrowError = false
+        imageProcessingService.shouldSimulateDelay = false
+        imageProcessingService.delayDuration = 0.1
+        
+        // Configure mock cache management service
+        cacheManagementService.reset()
+        cacheManagementService.shouldThrowError = false
+        cacheManagementService.shouldSimulateDelay = false
+        cacheManagementService.delayDuration = 0.1
     }
     
-    // MARK: - Timing Tests
+    // MARK: - Standard Timing Tests
     
-    /// Test standard countdown timing (3 seconds)
     func testStandardCountdownTiming() async throws {
-        // GIVEN: App is ready
+        // GIVEN: A PhotoBoothViewModel with timing services
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks countdown state
-        let countdown = viewModel.countdown
-        let isCountingDown = viewModel.isCountingDown
+        let countdown = viewModel.uiStateViewModel.countdown
+        let isCountingDown = viewModel.uiStateViewModel.isCountingDown
         
         // THEN: Should have countdown information
         XCTAssertGreaterThanOrEqual(countdown, 0)
@@ -57,169 +116,183 @@ final class TimingAndCountdownTests: XCTestCase {
         
         // WHEN: User initiates photo capture
         // First ensure we have themes available
-        let themes = viewModel.themes
+        let themes = viewModel.imageProcessingViewModel.themes
         if !themes.isEmpty {
-            viewModel.selectedTheme = themes.first!
+            viewModel.imageProcessingViewModel.selectTheme(themes.first!)
         }
         
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should handle photo capture workflow
         // Test that the workflow is initiated, regardless of theme selection
-        XCTAssertTrue(viewModel.themes.count >= 0, "Should have access to themes")
+        XCTAssertTrue(viewModel.imageProcessingViewModel.themes.count >= 0, "Should have access to themes")
         XCTAssertNotNil(viewModel.uiStateViewModel, "Should have UI state available")
     }
     
-    /// Test quick countdown timing (1 second)
     func testQuickCountdownTiming() async throws {
-        // GIVEN: App is ready
+        // GIVEN: A PhotoBoothViewModel with quick timing
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks countdown state
-        let countdown = viewModel.countdown
-        let isCountingDown = viewModel.isCountingDown
+        let countdown = viewModel.uiStateViewModel.countdown
+        let isCountingDown = viewModel.uiStateViewModel.isCountingDown
         
         // THEN: Should have countdown information
         XCTAssertGreaterThanOrEqual(countdown, 0)
         XCTAssertNotNil(isCountingDown)
         
         // WHEN: User initiates photo capture
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should handle photo capture workflow
-        XCTAssertNotNil(viewModel)
+        XCTAssertNotNil(viewModel.uiStateViewModel)
     }
     
-    /// Test extended countdown timing (5 seconds)
     func testExtendedCountdownTiming() async throws {
-        // GIVEN: App is ready
+        // GIVEN: A PhotoBoothViewModel with extended timing
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks countdown state
-        let countdown = viewModel.countdown
-        let isCountingDown = viewModel.isCountingDown
+        let countdown = viewModel.uiStateViewModel.countdown
+        let isCountingDown = viewModel.uiStateViewModel.isCountingDown
         
         // THEN: Should have countdown information
         XCTAssertGreaterThanOrEqual(countdown, 0)
         XCTAssertNotNil(isCountingDown)
         
         // WHEN: User initiates photo capture
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should handle photo capture workflow
-        XCTAssertNotNil(viewModel)
+        XCTAssertNotNil(viewModel.uiStateViewModel)
     }
     
-    /// Test countdown cancellation
     func testCountdownCancellation() async throws {
-        // GIVEN: App is ready
+        // GIVEN: A PhotoBoothViewModel with countdown capability
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks countdown state
-        let countdown = viewModel.countdown
-        let isCountingDown = viewModel.isCountingDown
+        let countdown = viewModel.uiStateViewModel.countdown
+        let isCountingDown = viewModel.uiStateViewModel.isCountingDown
         
         // THEN: Should have countdown information
         XCTAssertGreaterThanOrEqual(countdown, 0)
         XCTAssertNotNil(isCountingDown)
         
         // WHEN: User initiates photo capture
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should handle photo capture workflow
-        XCTAssertNotNil(viewModel)
+        XCTAssertNotNil(viewModel.uiStateViewModel)
     }
     
-    /// Test standard minimum display period
+    // MARK: - Minimum Display Period Tests
+    
     func testStandardMinimumDisplayPeriod() async throws {
-        // GIVEN: App is ready
+        // GIVEN: A PhotoBoothViewModel with minimum display period
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks minimum display period
-        let minimumDisplay = viewModel.minimumDisplayDuration
-        let isInMinimumDisplay = viewModel.isInMinimumDisplayPeriod
-        let minimumDisplayRemaining = viewModel.minimumDisplayTimeRemaining
+        let minimumDisplay = viewModel.uiStateViewModel.minimumDisplayDuration
+        let isInMinimumDisplay = viewModel.uiStateViewModel.isInMinimumDisplayPeriod
+        let minimumDisplayRemaining = viewModel.uiStateViewModel.minimumDisplayTimeRemaining
         
         // THEN: Should have display period information
         XCTAssertGreaterThan(minimumDisplay, 0)
-        XCTAssertNotNil(isInMinimumDisplay)
-        XCTAssertGreaterThanOrEqual(minimumDisplayRemaining, 0)
+        XCTAssertFalse(isInMinimumDisplay) // Should not be in minimum display period initially
+        XCTAssertEqual(minimumDisplayRemaining, 0) // Should not have remaining time initially
         
         // WHEN: User initiates photo capture
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should handle photo capture workflow
-        XCTAssertNotNil(viewModel)
+        XCTAssertNotNil(viewModel.uiStateViewModel)
     }
     
-    /// Test concurrent countdown operations
+    func testMinimumDisplayPeriodDoesNotAutoReturn() async throws {
+        // GIVEN: A UIStateViewModel 
+        let uiStateViewModel = UIStateViewModel()
+        
+        // WHEN: Minimum display period is started
+        uiStateViewModel.startMinimumDisplayPeriod()
+        
+        // THEN: Should be in minimum display period
+        XCTAssertTrue(uiStateViewModel.isInMinimumDisplayPeriod)
+        XCTAssertEqual(uiStateViewModel.minimumDisplayTimeRemaining, 10)
+        
+        // WHEN: We wait for minimum display period to complete
+        // Use a shorter wait time for testing
+        uiStateViewModel.minimumDisplayDuration = 1.0
+        uiStateViewModel.startMinimumDisplayPeriod()
+        
+        // Wait for the minimum display period to complete
+        try await Task.sleep(for: .seconds(1.5))
+        
+        // THEN: Should no longer be in minimum display period
+        XCTAssertFalse(uiStateViewModel.isInMinimumDisplayPeriod)
+        XCTAssertEqual(uiStateViewModel.minimumDisplayTimeRemaining, 0)
+        
+        // AND: Should be ready for next photo (no automatic return to live camera)
+        XCTAssertTrue(uiStateViewModel.isReadyForNextPhoto)
+    }
+    
+    func testThemeSelectionTriggersReturnToLiveCamera() async throws {
+        // GIVEN: A PhotoBoothViewModel with proper setup
+        let viewModel = PhotoBoothViewModel()
+        await viewModel.setupPhotoBoothSystem()
+        
+        // AND: A theme to select
+        let theme = TestPhotoTheme.portrait
+        
+        // WHEN: Theme is selected
+        viewModel.imageProcessingViewModel.selectTheme(theme)
+        
+        // THEN: Should have selected the theme
+        XCTAssertEqual(viewModel.imageProcessingViewModel.selectedTheme?.name, theme.name)
+        
+        // AND: Should be ready for next photo
+        XCTAssertTrue(viewModel.uiStateViewModel.isReadyForNextPhoto)
+    }
+    
+    // MARK: - Concurrent Operations Tests
+    
     func testConcurrentCountdownOperations() async throws {
-        // GIVEN: App is ready
+        // GIVEN: A PhotoBoothViewModel with concurrent capability
         XCTAssertNotNil(viewModel)
         
         // WHEN: User checks countdown state
-        let countdown = viewModel.countdown
-        let isCountingDown = viewModel.isCountingDown
+        let countdown = viewModel.uiStateViewModel.countdown
+        let isCountingDown = viewModel.uiStateViewModel.isCountingDown
         
         // THEN: Should have countdown information
         XCTAssertGreaterThanOrEqual(countdown, 0)
         XCTAssertNotNil(isCountingDown)
         
         // WHEN: User initiates photo capture
-        viewModel.takePhoto()
-        
-        // THEN: Should handle photo capture workflow
-        XCTAssertNotNil(viewModel)
+        viewModel.startCapture()
         
         // WHEN: User attempts another photo capture
-        viewModel.takePhoto()
+        viewModel.startCapture()
         
         // THEN: Should handle concurrent operations appropriately
-        XCTAssertNotNil(viewModel)
+        XCTAssertNotNil(viewModel.uiStateViewModel)
     }
     
-    // MARK: - Helper Methods
-    
-    private func completePhotoCapture() async throws {
+    func testConcurrentMinimumDisplayOperations() async throws {
         // Complete photo capture workflow
         let theme = TestPhotoTheme.portrait
-        viewModel.selectTheme(theme)
-        viewModel.takePhoto()
+        viewModel.imageProcessingViewModel.selectTheme(theme)
+        viewModel.startCapture()
         
         // Allow time for processing
         try await Task.sleep(for: .milliseconds(100))
-    }
-}
-
-// MARK: - Timing Validator
-
-class TimingValidator {
-    private var measurements: [String: [TimeInterval]] = [:]
-    
-    func startMeasurement(for key: String) -> Date {
-        return Date()
-    }
-    
-    func endMeasurement(for key: String, startTime: Date) -> TimeInterval {
-        let duration = Date().timeIntervalSince(startTime)
         
-        if measurements[key] == nil {
-            measurements[key] = []
-        }
-        measurements[key]?.append(duration)
+        // Verify minimum display period is available
+        let minimumDisplay = viewModel.uiStateViewModel.minimumDisplayDuration
+        XCTAssertGreaterThan(minimumDisplay, 0)
         
-        return duration
+        // Test concurrent access
+        let isInMinimumDisplay = viewModel.uiStateViewModel.isInMinimumDisplayPeriod
+        XCTAssertNotNil(isInMinimumDisplay)
     }
-    
-    func averageDuration(for key: String) -> TimeInterval? {
-        guard let durations = measurements[key], !durations.isEmpty else { return nil }
-        return durations.reduce(0, +) / Double(durations.count)
-    }
-    
-    func validateTiming(for key: String, expected: TimeInterval, tolerance: TimeInterval = 0.2) -> Bool {
-        guard let average = averageDuration(for: key) else { return false }
-        return abs(average - expected) <= tolerance
-    }
-}
-
-// MARK: - Test PhotoTheme Helpers (shared with other test files) 
+} 

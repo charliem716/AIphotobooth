@@ -4,6 +4,17 @@
 
 ### 1. Add Your API Credentials
 
+**🔒 Secure Keychain Storage (Recommended)**
+
+The app will automatically prompt you to securely store credentials in macOS Keychain on first run:
+
+1. Launch the app
+2. Enter your OpenAI API key when prompted
+3. Optionally add Twilio credentials for SMS
+4. Credentials are encrypted and stored in macOS Keychain
+
+**📄 Environment Variables (Alternative)**
+
 ```bash
 cp env.example .env
 ```
@@ -11,6 +22,10 @@ cp env.example .env
 Edit `.env` and add your credentials:
 - **OpenAI API Key**: Get from [platform.openai.com](https://platform.openai.com/api-keys)
 - **Twilio Credentials**: Get from [console.twilio.com](https://console.twilio.com/)
+
+**🔄 Automatic Migration**
+
+The app will automatically migrate credentials from `.env` to Keychain for improved security. This happens transparently on app startup.
 
 ### 2. Launch the App
 
@@ -63,6 +78,43 @@ Your custom themes are ready:
 3. Select the projector screen
 4. Guests will see the magical fade reveal!
 
+## 🔐 Credential Management
+
+### Viewing Stored Credentials
+
+The app provides a configuration summary showing where credentials are stored:
+
+```
+Configuration Status:
+• OpenAI: ✅ Configured
+• Twilio: ✅ Configured
+
+Credential Storage:
+• OpenAI API Key: ✅ Stored in Keychain (length: 51)
+• Twilio Account SID: ✅ Stored in Keychain (length: 34)
+• Twilio Auth Token: ✅ Stored in Keychain (length: 32)
+• Twilio From Number: ✅ Stored in Keychain (length: 12)
+```
+
+### Updating Credentials
+
+1. **Via App Interface**: The app will provide prompts to update credentials
+2. **Manual Migration**: Run the app to trigger automatic migration from .env to Keychain
+3. **Environment Fallback**: If Keychain credentials are missing, the app falls back to .env
+
+### Security Benefits
+
+- **Encrypted Storage**: Credentials are encrypted by macOS Keychain
+- **Access Control**: Only the PhotoBooth app can access its credentials
+- **No File Exposure**: Credentials are not stored in plain text files
+- **Automatic Cleanup**: Credentials are properly managed and cleaned up
+
+### Managing Credentials
+
+- **Clear All**: The app can clear all stored credentials from Keychain
+- **Individual Deletion**: Remove specific credentials as needed
+- **Migration Status**: View which credentials have been migrated
+
 ## 🆘 Troubleshooting
 
 ### iPhone Not Detected
@@ -72,9 +124,15 @@ Your custom themes are ready:
 - Restart both devices if needed
 
 ### SMS Not Sending
-- Verify Twilio credentials in .env
+- Verify Twilio credentials in Keychain or .env
 - Check phone number format (+1 for US)
 - Ensure Twilio account has credits
+
+### Credential Issues
+- Check configuration summary in app logs
+- Verify OpenAI API key is valid and has credits
+- Ensure Keychain access is not blocked
+- Try manual migration if automatic migration fails
 
 ### Build Issues
 ```bash
@@ -88,7 +146,9 @@ swift build
 - Photos are saved to `~/Pictures/booth/`
 - Cache auto-cleans after 7 days (configurable)
 - For production, use a backend service for API calls
-- Keep your .env file secure and never commit it
+- **Security**: Credentials are now stored in macOS Keychain for enhanced security
+- **Backup**: Keep your .env file secure and never commit it (used as fallback)
+- **Migration**: The app automatically migrates from .env to Keychain
 
 ## 🎉 Ready to Party!
 
